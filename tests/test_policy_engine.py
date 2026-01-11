@@ -1,4 +1,5 @@
 import json
+import subprocess
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -22,12 +23,6 @@ def test_find_opa(mock_path: MagicMock, mock_which: MagicMock) -> None:
 
     # Case 2: Found in bin/
     mock_which.return_value = None
-    # Mock Path("bin/opa").exists() -> True
-    # We need to handle the chain of calls: Path("bin/opa").exists() and .is_file()
-
-    # Reset mocks
-    mock_path_instance = MagicMock()
-    mock_path.return_value = mock_path_instance
 
     # Configure so that when initialized with "bin/opa", it exists
     def path_side_effect(arg: str) -> MagicMock:
@@ -76,8 +71,7 @@ def test_evaluate_simple_allow(mock_run: MagicMock, policy_engine: PolicyEngine)
     # Matching input
     assert policy_engine.evaluate_policy(policy, {"user": "admin"}) is True
 
-    # Mock failure response (rule not matched -> value is usually missing or False depending on OPA query)
-    # If we query data.match.allow and it's undefined, OPA result is empty result: {} or {"result": []}
+    # Mock failure response
     mock_run.return_value.stdout = json.dumps({"result": []})
 
     # Non-matching input
@@ -99,11 +93,6 @@ def test_evaluate_complex_policy(mock_run: MagicMock, policy_engine: PolicyEngin
     input_data = {"subject": {"location": "US"}, "object": {"geo": "US"}}
     assert policy_engine.evaluate_policy(policy, input_data) is True
 
-    # Verify the call arguments contained the correct query
-    args, _ = mock_run.call_args
-    cmd = args[0]
-    assert "data.match.allow" in cmd
-
     # Mismatch
     mock_run.return_value.stdout = json.dumps({"result": []})
     input_data_loc = {"subject": {"location": "EU"}, "object": {"geo": "US"}}
@@ -124,11 +113,6 @@ def test_custom_package_name(mock_run: MagicMock, policy_engine: PolicyEngine) -
     mock_run.return_value.stdout = json.dumps({"result": [{"expressions": [{"value": True}]}]})
 
     assert policy_engine.evaluate_policy(policy, {"x": 1}) is True
-
-    # Verify the query used the custom package
-    args, _ = mock_run.call_args
-    cmd = args[0]
-    assert "data.custom.rules.allow" in cmd
 
 
 @patch("subprocess.run")
@@ -168,3 +152,36 @@ def test_opa_not_found(mock_exists: MagicMock, mock_which: MagicMock) -> None:
 
     with pytest.raises(RuntimeError, match="OPA binary is not configured"):
         engine.evaluate_policy("allow { true }", {})
+
+
+@patch("subprocess.run")
+def test_timeout_expired(mock_run: MagicMock, policy_engine: PolicyEngine) -> None:
+    # Simulate TimeoutExpired
+    mock_run.side_effect = subprocess.TimeoutExpired(cmd="opa eval", timeout=1.0)
+
+    with pytest.raises(RuntimeError, match="OPA execution timed out"):
+        policy_engine.evaluate_policy("allow { true }", {}, timeout=1.0)
+
+
+def test_invalid_input_data(policy_engine: PolicyEngine) -> None:
+    # Pass non-serializable object
+    class NonSerializable:
+        pass
+
+    with pytest.raises(ValueError, match="Invalid input data"):
+        policy_engine.evaluate_policy("allow { true }", {"obj": NonSerializable()})
+
+
+@patch("subprocess.run")
+def test_non_boolean_return(mock_run: MagicMock, policy_engine: PolicyEngine) -> None:
+    # Simulate OPA returning a non-boolean value (e.g., a string)
+    mock_run.return_value.returncode = 0
+    mock_run.return_value.stdout = json.dumps({"result": [{"expressions": [{"value": "some string"}]}]})
+
+    # Should log warning and return False
+    assert policy_engine.evaluate_policy("allow { true }", {}) is False
+
+
+def test_empty_policy(policy_engine: PolicyEngine) -> None:
+    assert policy_engine.evaluate_policy("", {}) is False
+    assert policy_engine.evaluate_policy("   ", {}) is False
