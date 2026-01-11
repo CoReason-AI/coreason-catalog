@@ -185,3 +185,40 @@ def test_non_boolean_return(mock_run: MagicMock, policy_engine: PolicyEngine) ->
 def test_empty_policy(policy_engine: PolicyEngine) -> None:
     assert policy_engine.evaluate_policy("", {}) is False
     assert policy_engine.evaluate_policy("   ", {}) is False
+
+
+@patch("subprocess.run")
+def test_malformed_package_declaration(mock_run: MagicMock, policy_engine: PolicyEngine) -> None:
+    # Policy contains "package " but no valid name matches regex immediately (e.g. comment)
+    policy = "package # comment\nallow { true }"
+
+    # Should fall through to "pass" in regex match block and use default "match"
+    # Expected query: data.match.allow
+
+    mock_run.return_value.returncode = 0
+    mock_run.return_value.stdout = json.dumps({"result": [{"expressions": [{"value": True}]}]})
+
+    assert policy_engine.evaluate_policy(policy, {}) is True
+
+    # Verify default package was used
+    args, _ = mock_run.call_args
+    assert "data.match.allow" in args[0]
+
+
+@patch("subprocess.run")
+def test_generic_exception_handling(mock_run: MagicMock, policy_engine: PolicyEngine) -> None:
+    # Simulate an unexpected exception
+    mock_run.side_effect = Exception("Unexpected error")
+
+    with pytest.raises(Exception, match="Unexpected error"):
+        policy_engine.evaluate_policy("allow { true }", {})
+
+
+@patch("subprocess.run")
+def test_invalid_json_output(mock_run: MagicMock, policy_engine: PolicyEngine) -> None:
+    # Simulate OPA returning invalid JSON
+    mock_run.return_value.returncode = 0
+    mock_run.return_value.stdout = "Invalid JSON"
+
+    with pytest.raises(RuntimeError, match="Failed to parse OPA output"):
+        policy_engine.evaluate_policy("allow { true }", {})
