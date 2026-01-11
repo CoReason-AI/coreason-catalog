@@ -8,12 +8,13 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_catalog
 
-import os
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
+
 from coreason_catalog.utils.logger import logger
 
-def test_logger_initialization():
+
+def test_logger_initialization() -> None:
     """Test that the logger is initialized correctly and creates the log directory."""
     # Since the logger is initialized on import, we check side effects
 
@@ -29,6 +30,26 @@ def test_logger_initialization():
     # logger.info("Test log")
     # assert (log_path / "app.log").exists()
 
-def test_logger_exports():
+
+def test_logger_exports() -> None:
     """Test that logger is exported."""
     assert logger is not None
+
+
+def test_logger_directory_creation_logic() -> None:
+    """
+    Test the specific logic for creating the directory.
+    We need to reload the module while mocking Path.exists to return False.
+    """
+    import importlib
+
+    import coreason_catalog.utils.logger
+
+    with patch("pathlib.Path.exists", return_value=False), patch("pathlib.Path.mkdir") as mock_mkdir:
+        importlib.reload(coreason_catalog.utils.logger)
+
+        # Verify mkdir was called
+        mock_mkdir.assert_called_with(parents=True, exist_ok=True)
+
+    # Reload again to restore normal state
+    importlib.reload(coreason_catalog.utils.logger)
