@@ -53,27 +53,37 @@ class VectorStore:
         Args:
             manifest: The source manifest to store.
             embedding: The vector embedding of the description.
+
+        Raises:
+            ValueError: If embedding dimension is incorrect.
         """
-        table = self.db.open_table(self.table_name)
+        if len(embedding) != 384:
+            raise ValueError(f"Embedding dimension mismatch. Expected 384, got {len(embedding)}")
 
-        data = [
-            {
-                "urn": manifest.urn,
-                "name": manifest.name,
-                "description": manifest.description,
-                "vector": embedding,
-                "endpoint_url": manifest.endpoint_url,
-                "geo_location": manifest.geo_location,
-                "sensitivity": manifest.sensitivity.value,
-                "owner_group": manifest.owner_group,
-                "access_policy": manifest.access_policy,
-            }
-        ]
+        try:
+            table = self.db.open_table(self.table_name)
 
-        # Check if exists, delete if so (simple upsert strategy)
-        # LanceDB merge/upsert is more complex, delete-insert is safer for MVP
-        table.delete(f"urn = '{manifest.urn}'")
-        table.add(data)
+            data = [
+                {
+                    "urn": manifest.urn,
+                    "name": manifest.name,
+                    "description": manifest.description,
+                    "vector": embedding,
+                    "endpoint_url": manifest.endpoint_url,
+                    "geo_location": manifest.geo_location,
+                    "sensitivity": manifest.sensitivity.value,
+                    "owner_group": manifest.owner_group,
+                    "access_policy": manifest.access_policy,
+                }
+            ]
+
+            # Check if exists, delete if so (simple upsert strategy)
+            # LanceDB merge/upsert is more complex, delete-insert is safer for MVP
+            table.delete(f"urn = '{manifest.urn}'")
+            table.add(data)
+        except Exception as e:
+            # Handle potential concurrent write issues or other DB errors
+            raise RuntimeError(f"Failed to add source: {e}") from e
 
     def search(
         self, query_vector: List[float], limit: int = 10, filter_sql: Optional[str] = None
@@ -88,15 +98,27 @@ class VectorStore:
 
         Returns:
             List of matching SourceManifest objects.
+
+        Raises:
+            ValueError: If query vector dimension is incorrect or filter SQL is invalid.
         """
-        table = self.db.open_table(self.table_name)
+        if len(query_vector) != 384:
+            raise ValueError(f"Query vector dimension mismatch. Expected 384, got {len(query_vector)}")
 
-        query = table.search(query_vector).limit(limit)
+        try:
+            table = self.db.open_table(self.table_name)
 
-        if filter_sql:
-            query = query.where(filter_sql)
+            query = table.search(query_vector).limit(limit)
 
-        results = query.to_pandas()
+            if filter_sql:
+                query = query.where(filter_sql)
+
+            results = query.to_pandas()
+        except Exception as e:
+            # Catch errors related to invalid SQL or other query issues
+            if filter_sql and ("syntax" in str(e).lower() or "parser" in str(e).lower()):
+                raise ValueError(f"Invalid SQL filter: {e}") from e
+            raise RuntimeError(f"Search failed: {e}") from e
 
         manifests = []
         for _, row in results.iterrows():
