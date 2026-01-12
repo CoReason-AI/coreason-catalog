@@ -144,3 +144,79 @@ def test_model_serialization() -> None:
     json_str = manifest.model_dump_json()
     assert "urn:coreason:mcp:test_01" in json_str
     assert "PII" in json_str
+
+
+def test_source_manifest_extra_field() -> None:
+    """Test that extra fields are forbidden."""
+    with pytest.raises(ValidationError) as excinfo:
+        SourceManifest(  # type: ignore[call-arg]
+            urn="urn:coreason:mcp:test_04",
+            name="Extra Field Source",
+            description="Testing extra fields",
+            endpoint_url="sse://localhost",
+            geo_location="US",
+            sensitivity=DataSensitivity.PUBLIC,
+            owner_group="Test",
+            access_policy="allow { true }",
+            extra_field="I should not be here",
+        )
+    assert "Extra inputs are not permitted" in str(excinfo.value)
+
+
+def test_source_manifest_invalid_urn() -> None:
+    """Test validation of URN format."""
+    with pytest.raises(ValidationError) as excinfo:
+        SourceManifest(
+            urn="http://invalid-urn",
+            name="Invalid URN",
+            description="Desc",
+            endpoint_url="sse://localhost",
+            geo_location="US",
+            sensitivity=DataSensitivity.PUBLIC,
+            owner_group="Test",
+            access_policy="allow { true }",
+        )
+    assert 'URN must start with "urn:"' in str(excinfo.value)
+
+
+def test_source_result_negative_latency() -> None:
+    """Test validation of negative latency."""
+    with pytest.raises(ValidationError) as excinfo:
+        SourceResult(
+            source_urn="urn:coreason:mcp:test",
+            status="SUCCESS",
+            latency_ms=-1.0,
+        )
+    assert "Latency cannot be negative" in str(excinfo.value)
+
+
+def test_source_result_complex_data() -> None:
+    """Test SourceResult with complex nested data."""
+    complex_data = {
+        "list": [1, 2, {"nested": "dict"}],
+        "null_val": None,
+        "bool_val": True,
+        "deep": {"a": {"b": {"c": 123}}},
+    }
+    result = SourceResult(
+        source_urn="urn:coreason:mcp:test",
+        status="SUCCESS",
+        data=complex_data,
+        latency_ms=10.0,
+    )
+    assert result.data == complex_data
+    # Ensure it serializes
+    json_str = result.model_dump_json()
+    assert "nested" in json_str
+
+
+def test_catalog_response_extra_field() -> None:
+    """Test CatalogResponse forbids extra fields."""
+    with pytest.raises(ValidationError) as excinfo:
+        CatalogResponse(  # type: ignore[call-arg]
+            query_id=uuid.uuid4(),
+            aggregated_results=[],
+            provenance_signature="sig",
+            extra="forbidden",
+        )
+    assert "Extra inputs are not permitted" in str(excinfo.value)
