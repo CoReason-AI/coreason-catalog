@@ -1,28 +1,14 @@
-# Copyright (c) 2025 CoReason, Inc.
-#
-# This software is proprietary and dual-licensed.
-# Licensed under the Prosperity Public License 3.0 (the "License").
-# A copy of the license is available at https://prosperitylicense.com/versions/3.0.0
-# For details, see the LICENSE file.
-# Commercial use beyond a 30-day trial requires a separate license.
-#
-# Source Code: https://github.com/CoReason-AI/coreason_catalog
-
 from enum import Enum
-from typing import Any, Literal
+from typing import Any, List, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, Field
 
 
 class DataSensitivity(str, Enum):
-    """
-    Data Sensitivity levels for classification and access control.
-    """
-
     PUBLIC = "PUBLIC"
     INTERNAL = "INTERNAL"
-    PII = "PII"
+    PII = "PII"  # Personally Identifiable Information
     GxP_LOCKED = "GxP_LOCKED"
 
 
