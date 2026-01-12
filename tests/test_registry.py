@@ -93,3 +93,69 @@ def test_register_source_storage_failure(
 
     with pytest.raises(RuntimeError, match="Failed to store source"):
         registry_service.register_source(sample_manifest)
+
+
+def test_register_source_empty_description(
+    registry_service: RegistryService,
+    mock_vector_store: MagicMock,
+    mock_embedding_service: MagicMock,
+    sample_manifest: SourceManifest,
+) -> None:
+    """Test registration with an empty description."""
+    sample_manifest.description = ""
+    registry_service.register_source(sample_manifest)
+
+    # Should still attempt to embed empty string
+    mock_embedding_service.embed_text.assert_called_once_with("")
+    mock_vector_store.add_source.assert_called_once()
+
+
+def test_register_source_whitespace_description(
+    registry_service: RegistryService,
+    mock_vector_store: MagicMock,
+    mock_embedding_service: MagicMock,
+    sample_manifest: SourceManifest,
+) -> None:
+    """Test registration with a whitespace-only description."""
+    sample_manifest.description = "   "
+    registry_service.register_source(sample_manifest)
+
+    # Should still attempt to embed whitespace string
+    mock_embedding_service.embed_text.assert_called_once_with("   ")
+    mock_vector_store.add_source.assert_called_once()
+
+
+def test_register_source_update_scenario(
+    registry_service: RegistryService,
+    mock_vector_store: MagicMock,
+    mock_embedding_service: MagicMock,
+    sample_manifest: SourceManifest,
+) -> None:
+    """
+    Test a scenario where a source is updated.
+    1. Register with original description.
+    2. Register with new description.
+    Verify that embedding is regenerated and stored each time.
+    """
+    # 1. First Registration
+    registry_service.register_source(sample_manifest)
+    mock_embedding_service.embed_text.assert_called_with(sample_manifest.description)
+    mock_vector_store.add_source.assert_called_with(sample_manifest, [0.1] * 384)
+
+    # Reset mocks to track second call cleanly
+    mock_embedding_service.embed_text.reset_mock()
+    mock_vector_store.add_source.reset_mock()
+
+    # 2. Update Description
+    new_description = "Updated description for the same source."
+    sample_manifest.description = new_description
+    # Simulate a different embedding for the new text
+    new_embedding = [0.2] * 384
+    mock_embedding_service.embed_text.return_value = new_embedding
+
+    registry_service.register_source(sample_manifest)
+
+    # Verify new embedding was generated
+    mock_embedding_service.embed_text.assert_called_once_with(new_description)
+    # Verify new embedding was stored
+    mock_vector_store.add_source.assert_called_once_with(sample_manifest, new_embedding)
