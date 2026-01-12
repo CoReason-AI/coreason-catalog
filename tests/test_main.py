@@ -1,5 +1,6 @@
-from coreason_catalog.main import app
 from fastapi.testclient import TestClient
+
+from coreason_catalog.main import app
 
 client = TestClient(app)
 

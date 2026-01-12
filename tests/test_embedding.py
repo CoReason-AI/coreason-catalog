@@ -1,7 +1,8 @@
 import numpy as np
 import pytest
-from coreason_catalog.services.embedding import EmbeddingService
 from pytest_mock import MockerFixture
+
+from coreason_catalog.services.embedding import EmbeddingService
 
 # We mock TextEmbedding to avoid downloading models during tests
 # unless we explicitly want integration tests.

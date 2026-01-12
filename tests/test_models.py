@@ -1,8 +1,9 @@
 from uuid import uuid4
 
 import pytest
-from coreason_catalog.models import CatalogResponse, DataSensitivity, SourceManifest, SourceResult
 from pydantic import ValidationError
+
+from coreason_catalog.models import CatalogResponse, DataSensitivity, SourceManifest, SourceResult
 
 
 def test_data_sensitivity_enum() -> None:

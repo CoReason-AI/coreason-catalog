@@ -4,6 +4,7 @@ from typing import Generator
 from unittest.mock import MagicMock, patch
 
 import pytest
+
 from coreason_catalog.models import DataSensitivity, SourceManifest
 from coreason_catalog.services.vector_store import VectorStore
 

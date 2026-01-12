@@ -1,6 +1,7 @@
 from unittest.mock import MagicMock
 
 import pytest
+
 from coreason_catalog.models import DataSensitivity, SourceManifest
 from coreason_catalog.services.embedding import EmbeddingService
 from coreason_catalog.services.registry import RegistryService
