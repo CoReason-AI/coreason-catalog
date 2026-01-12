@@ -13,6 +13,8 @@ from pathlib import Path
 
 from loguru import logger
 
+__all__ = ["logger"]
+
 # Remove default handler
 logger.remove()
 
