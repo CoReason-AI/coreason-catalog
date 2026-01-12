@@ -10,31 +10,24 @@
 
 import importlib
 import sys
+import types
 from unittest.mock import MagicMock, patch
 
-# To avoid importing the 'logger' object instead of the module, we need to bypass the package import
-# or inspect sys.modules directly.
-# The issue is that `from coreason_catalog.utils import logger` gives us the object because of __init__.py export.
-# But `import coreason_catalog.utils.logger` should strictly be the module... UNLESS `coreason_catalog.utils` has
-# 'logger' in its namespace (which it does, from the __init__.py) which shadows the submodule.
-# Workaround: Import via sys.modules or use import_module with absolute path, checking what we get.
-from coreason_catalog.utils import logger as potential_logger_module
 
-# If it is the object, we need to get the actual module
-if not isinstance(potential_logger_module, type(sys)):
-    # It's not a module, it's the object.
-    # We can try to get the module from sys.modules if it's loaded
-    if "coreason_catalog.utils.logger" in sys.modules:
-        logger_module = sys.modules["coreason_catalog.utils.logger"]
+# Ensure we have the module, not the object
+# We use a helper function to safely get the module for reloading
+def get_logger_module() -> types.ModuleType:
+    module_name = "coreason_catalog.utils.logger"
+    if module_name in sys.modules:
+        return sys.modules[module_name]
     else:
-        # This shouldn't happen if we imported it, but...
-        logger_module = importlib.import_module("coreason_catalog.utils.logger")
-else:
-    logger_module = potential_logger_module
+        return importlib.import_module(module_name)
 
 
 def test_logger_directory_creation() -> None:
     """Test that the logs directory is created if it does not exist."""
+    logger_module = get_logger_module()
+
     with patch("pathlib.Path") as mock_path_cls:
         mock_path_instance = MagicMock()
         mock_path_cls.return_value = mock_path_instance
@@ -50,6 +43,8 @@ def test_logger_directory_creation() -> None:
 
 def test_logger_directory_exists() -> None:
     """Test that mkdir is not called if logs directory exists."""
+    logger_module = get_logger_module()
+
     with patch("pathlib.Path") as mock_path_cls:
         mock_path_instance = MagicMock()
         mock_path_cls.return_value = mock_path_instance
