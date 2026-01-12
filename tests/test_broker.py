@@ -14,14 +14,6 @@ from coreason_catalog.services.policy_engine import PolicyEngine
 from coreason_catalog.services.vector_store import VectorStore
 
 
-# Mock Implementation of QueryDispatcher
-class MockDispatcher(QueryDispatcher):
-    async def dispatch(self, source: SourceManifest, intent: str) -> Any:
-        if "fail" in intent.lower():
-            raise RuntimeError("Network Error")
-        return {"result": f"Data from {source.name}"}
-
-
 @pytest.fixture  # type: ignore[misc]
 def mock_vector_store() -> MagicMock:
     return MagicMock(spec=VectorStore)
@@ -268,3 +260,114 @@ async def test_policy_engine_failure(
     response = await broker.dispatch_query("query", {})
 
     assert len(response.aggregated_results) == 0
+
+
+@pytest.mark.asyncio  # type: ignore[misc]
+async def test_empty_intent(
+    broker: FederationBroker,
+    mock_embedding_service: MagicMock,
+    mock_vector_store: MagicMock,
+) -> None:
+    """
+    Test handling of an empty intent string.
+    """
+    # Mock embedding behavior for empty string (some models might return vector, others might fail)
+    # Assuming it returns a valid vector or we mock it to do so
+    mock_embedding_service.embed_text.return_value = [0.0] * 384
+    mock_vector_store.search.return_value = []
+
+    response = await broker.dispatch_query("", {})
+
+    assert isinstance(response, CatalogResponse)
+    assert len(response.aggregated_results) == 0
+    mock_embedding_service.embed_text.assert_called_with("")
+    mock_vector_store.search.assert_called_once()
+
+
+@pytest.mark.asyncio  # type: ignore[misc]
+async def test_complex_federation_scenario(
+    broker: FederationBroker,
+    mock_vector_store: MagicMock,
+    mock_policy_engine: MagicMock,
+    mock_dispatcher: AsyncMock,
+    sample_manifest_us: SourceManifest,
+    sample_manifest_eu: SourceManifest,
+) -> None:
+    """
+    Complex Scenario:
+    - 5 Candidates found.
+    - Source 1 (US): Allowed, Success
+    - Source 2 (EU): Blocked by Policy
+    - Source 3 (Network Fail): Allowed, Fails during dispatch
+    - Source 4 (Empty): Allowed, Returns empty result
+    - Source 5 (Exception): Allowed, Dispatch raises unexpected error
+    """
+    # Create extra sources
+    source_network_fail = sample_manifest_us.model_copy(update={"urn": "urn:coreason:mcp:fail_net"})
+    source_empty = sample_manifest_us.model_copy(update={"urn": "urn:coreason:mcp:empty"})
+    source_exception = sample_manifest_us.model_copy(update={"urn": "urn:coreason:mcp:except"})
+
+    # 1. Search returns 5 candidates
+    candidates = [
+        sample_manifest_us,  # 1. Good
+        sample_manifest_eu,  # 2. Blocked
+        source_network_fail,  # 3. Network Fail
+        source_empty,  # 4. Empty Data
+        source_exception,  # 5. Exception
+    ]
+    mock_vector_store.search.return_value = candidates
+
+    # 2. Policy: Block EU (index 1), Allow others
+    def policy_side_effect(policy: str, input_data: dict[str, Any]) -> bool:
+        obj = input_data.get("object", {})
+        if obj.get("urn") == sample_manifest_eu.urn:
+            return False
+        return True
+
+    mock_policy_engine.evaluate_policy.side_effect = policy_side_effect
+
+    # 3. Dispatcher behavior
+    async def dispatch_side_effect(source: SourceManifest, intent: str) -> Any:
+        if source.urn == source_network_fail.urn:
+            raise RuntimeError("Network Timeout")
+        if source.urn == source_exception.urn:
+            raise ValueError("Parser Error")
+        if source.urn == source_empty.urn:
+            return {}
+        if source.urn == sample_manifest_us.urn:
+            return {"data": "Valid Data"}
+        return None
+
+    mock_dispatcher.dispatch.side_effect = dispatch_side_effect
+
+    # Act
+    response = await broker.dispatch_query("complex query", {})
+
+    # Assert
+    # Total candidates: 5
+    # Blocked: 1 (EU) -> Not in results
+    # Allowed: 4
+    # Results expected: 4
+    assert len(response.aggregated_results) == 4
+
+    # Verify individual results
+    results_map = {r.source_urn: r for r in response.aggregated_results}
+
+    # 1. Good Source
+    assert results_map[sample_manifest_us.urn].status == "SUCCESS"
+    assert results_map[sample_manifest_us.urn].data == {"data": "Valid Data"}
+
+    # 2. Blocked Source (Should NOT be present)
+    assert sample_manifest_eu.urn not in results_map
+
+    # 3. Network Fail
+    assert results_map[source_network_fail.urn].status == "ERROR"
+    assert "Network Timeout" in str(results_map[source_network_fail.urn].data)
+
+    # 4. Empty Result
+    assert results_map[source_empty.urn].status == "SUCCESS"
+    assert results_map[source_empty.urn].data == {}
+
+    # 5. Exception
+    assert results_map[source_exception.urn].status == "ERROR"
+    assert "Parser Error" in str(results_map[source_exception.urn].data)
