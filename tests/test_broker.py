@@ -2,7 +2,6 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-
 from coreason_catalog.models import (
     CatalogResponse,
     DataSensitivity,

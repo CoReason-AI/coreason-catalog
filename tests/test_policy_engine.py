@@ -3,7 +3,6 @@ import subprocess
 from unittest.mock import MagicMock, patch
 
 import pytest
-
 from coreason_catalog.services.policy_engine import PolicyEngine
 
 

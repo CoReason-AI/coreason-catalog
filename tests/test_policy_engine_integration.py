@@ -2,7 +2,6 @@ import shutil
 from pathlib import Path
 
 import pytest
-
 from coreason_catalog.services.policy_engine import PolicyEngine
 
 # Check if opa binary exists
