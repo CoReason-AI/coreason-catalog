@@ -1,4 +1,3 @@
-import asyncio
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -226,9 +225,7 @@ async def test_no_results(broker: FederationBroker, mock_vector_store: MagicMock
 
 
 @pytest.mark.asyncio  # type: ignore[misc]
-async def test_embedding_failure(
-    broker: FederationBroker, mock_embedding_service: MagicMock
-) -> None:
+async def test_embedding_failure(broker: FederationBroker, mock_embedding_service: MagicMock) -> None:
     """Test handling of embedding service failure."""
     mock_embedding_service.embed_text.side_effect = Exception("Model down")
 
