@@ -2,7 +2,6 @@ import shutil
 from pathlib import Path
 
 import pytest
-
 from coreason_catalog.services.policy_engine import PolicyEngine
 
 # Check if opa binary exists
@@ -20,8 +19,9 @@ class TestPolicyEngineIntegration:
         """Test a policy using array comprehensions and built-in functions."""
         policy = """
         package complex.test
+        import rego.v1
 
-        allow {
+        allow if {
             # Check if user has "admin" role
             some i
             input.user.roles[i] == "admin"
@@ -49,8 +49,9 @@ class TestPolicyEngineIntegration:
 
         policy = """
         package large.payload
+        import rego.v1
 
-        allow {
+        allow if {
             # Verify sum of values is correct (just to force processing)
             # Rego sum is not built-in for lists directly without comprehension,
             # let's just check existence of a specific item
@@ -69,14 +70,15 @@ class TestPolicyEngineIntegration:
         """Test a policy with multiple rules (OR logic)."""
         policy = """
         package multi.rules
+        import rego.v1
 
-        default allow = false
+        default allow := false
 
-        allow {
+        allow if {
             input.role == "admin"
         }
 
-        allow {
+        allow if {
             input.role == "editor"
             input.action == "read"
         }
@@ -95,12 +97,13 @@ class TestPolicyEngineIntegration:
         """Test a policy that defines and uses helper functions."""
         policy = """
         package helpers
+        import rego.v1
 
-        is_adult(age) {
+        is_adult(age) if {
             age >= 18
         }
 
-        allow {
+        allow if {
             is_adult(input.user.age)
         }
         """

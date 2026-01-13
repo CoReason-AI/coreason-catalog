@@ -2,12 +2,12 @@ import asyncio
 import time
 import uuid
 from abc import ABC, abstractmethod
-from datetime import datetime
 from typing import Any, Dict, List
 
 from coreason_catalog.models import CatalogResponse, SourceManifest, SourceResult
 from coreason_catalog.services.embedding import EmbeddingService
 from coreason_catalog.services.policy_engine import PolicyEngine
+from coreason_catalog.services.provenance import ProvenanceService
 from coreason_catalog.services.vector_store import VectorStore
 from coreason_catalog.utils.logger import logger
 
@@ -44,11 +44,13 @@ class FederationBroker:
         policy_engine: PolicyEngine,
         embedding_service: EmbeddingService,
         dispatcher: QueryDispatcher,
+        provenance_service: ProvenanceService,
     ):
         self.vector_store = vector_store
         self.policy_engine = policy_engine
         self.embedding_service = embedding_service
         self.dispatcher = dispatcher
+        self.provenance_service = provenance_service
 
     async def dispatch_query(self, intent: str, user_context: Dict[str, Any], limit: int = 10) -> CatalogResponse:
         """
@@ -134,7 +136,7 @@ class FederationBroker:
             return CatalogResponse(
                 query_id=query_id,
                 aggregated_results=[],
-                provenance_signature=self._generate_provenance(query_id, []),
+                provenance_signature=self.provenance_service.generate_provenance(query_id, []),
             )
 
         # Define an async worker for dispatching
@@ -162,17 +164,7 @@ class FederationBroker:
         response = CatalogResponse(
             query_id=query_id,
             aggregated_results=list(results),
-            provenance_signature=self._generate_provenance(query_id, list(results)),
+            provenance_signature=self.provenance_service.generate_provenance(query_id, list(results)),
         )
 
         return response
-
-    def _generate_provenance(self, query_id: uuid.UUID, results: List[SourceResult]) -> str:
-        """
-        Generate a placeholder W3C PROV-O signature.
-        Actual implementation will be in AUC 3.
-        """
-        # Placeholder format based on requirements
-        timestamp = datetime.utcnow().isoformat() + "Z"
-        source_urns = [r.source_urn for r in results if r.status == "SUCCESS"]
-        return f"provenance:v1:query={query_id}:sources={','.join(source_urns)}:time={timestamp}"
