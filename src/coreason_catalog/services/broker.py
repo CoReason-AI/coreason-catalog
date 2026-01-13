@@ -161,10 +161,14 @@ class FederationBroker:
         results = await asyncio.gather(*tasks)
 
         # Final Response
+        # Check if any source returned an error
+        has_partial_content = any(r.status == "ERROR" for r in results)
+
         response = CatalogResponse(
             query_id=query_id,
             aggregated_results=list(results),
             provenance_signature=self.provenance_service.generate_provenance(query_id, list(results)),
+            partial_content=has_partial_content,
         )
 
         return response
