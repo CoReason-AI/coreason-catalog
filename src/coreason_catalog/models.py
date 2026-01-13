@@ -38,3 +38,4 @@ class CatalogResponse(BaseModel):
     query_id: UUID
     aggregated_results: List[SourceResult]
     provenance_signature: str  # W3C PROV signature
+    partial_content: bool = False  # Warning flag for fail-safe aggregation
