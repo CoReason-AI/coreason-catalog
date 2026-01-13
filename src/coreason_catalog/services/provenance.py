@@ -59,7 +59,8 @@ class ProvenanceService:
                 used_sources.append(result.source_urn)
 
         if used_sources:
-            activity["prov:used"] = used_sources
+            # Sort for deterministic output
+            activity["prov:used"] = sorted(used_sources)
 
         # Construct the Graph
         graph = [activity, response_entity]
