@@ -213,6 +213,9 @@ async def test_fail_safe_aggregation(
     assert eu_result.status == "ERROR"
     assert "Connection Timeout" in str(eu_result.data)
 
+    # Verify partial_content flag
+    assert response.partial_content is True
+
 
 @pytest.mark.asyncio  # type: ignore[misc]
 async def test_no_results(broker: FederationBroker, mock_vector_store: MagicMock) -> None:
@@ -379,3 +382,6 @@ async def test_complex_federation_scenario(
     # 5. Exception
     assert results_map[source_exception.urn].status == "ERROR"
     assert "Parser Error" in str(results_map[source_exception.urn].data)
+
+    # Verify partial_content flag (since errors occurred)
+    assert response.partial_content is True
