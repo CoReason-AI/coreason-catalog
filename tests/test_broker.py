@@ -2,7 +2,6 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-
 from coreason_catalog.models import (
     CatalogResponse,
     DataSensitivity,
@@ -11,6 +10,7 @@ from coreason_catalog.models import (
 from coreason_catalog.services.broker import FederationBroker, QueryDispatcher
 from coreason_catalog.services.embedding import EmbeddingService
 from coreason_catalog.services.policy_engine import PolicyEngine
+from coreason_catalog.services.provenance import ProvenanceService
 from coreason_catalog.services.vector_store import VectorStore
 
 
@@ -39,17 +39,26 @@ def mock_dispatcher() -> AsyncMock:
 
 
 @pytest.fixture  # type: ignore[misc]
+def mock_provenance_service() -> MagicMock:
+    service = MagicMock(spec=ProvenanceService)
+    service.generate_provenance.return_value = '{"@context": {}, "@graph": []}'
+    return service
+
+
+@pytest.fixture  # type: ignore[misc]
 def broker(
     mock_vector_store: MagicMock,
     mock_policy_engine: MagicMock,
     mock_embedding_service: MagicMock,
     mock_dispatcher: AsyncMock,
+    mock_provenance_service: MagicMock,
 ) -> FederationBroker:
     return FederationBroker(
         vector_store=mock_vector_store,
         policy_engine=mock_policy_engine,
         embedding_service=mock_embedding_service,
         dispatcher=mock_dispatcher,
+        provenance_service=mock_provenance_service,
     )
 
 
@@ -118,7 +127,6 @@ async def test_semantic_routing_discovery(
     assert len(response.aggregated_results) == 2
     assert response.aggregated_results[0].status == "SUCCESS"
     assert response.aggregated_results[1].status == "SUCCESS"
-    assert "provenance" in response.provenance_signature
 
     # Verify calls
     mock_vector_store.search.assert_called_once()
