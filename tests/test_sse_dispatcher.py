@@ -1,3 +1,5 @@
+import asyncio
+
 import httpx
 import pytest
 import respx
@@ -116,7 +118,7 @@ async def test_sse_dispatch_malformed_json_and_empty_lines(mock_source: SourceMa
 
     sse_content = [
         'data: {"valid": true}\n\n',
-        "data: \n\n",  # Empty data (keep-alive)
+        "data: \n\n",  # Empty data (keep-alive) - handled by buffer reset/empty check logic
         "data: INVALID_JSON\n\n",
     ]
 
@@ -141,12 +143,7 @@ async def test_sse_dispatch_generic_exception(mock_source: SourceManifest) -> No
     # To test generic exception, we can mock something that raises a non-httpx exception
     # Or mock the 'stream' method on the client to raise Exception
 
-    # We'll use a mocked client for this one to force the exception more easily
-    # without relying on respx for everything.
-
     mock_client = httpx.AsyncClient()
-    # Mocking stream context manager is a bit complex, let's stick to respx if possible
-    # or just use unittest.mock on the client passed in.
 
     import unittest.mock
 
@@ -156,3 +153,139 @@ async def test_sse_dispatch_generic_exception(mock_source: SourceManifest) -> No
 
     with pytest.raises(Exception, match="Generic Error"):
         await dispatcher_with_mock.dispatch(mock_source, "find data")
+
+
+@pytest.mark.asyncio  # type: ignore[misc]
+async def test_sse_dispatch_multiline_data(mock_source: SourceManifest) -> None:
+    """Test handling of JSON split across multiple data lines."""
+    dispatcher = SSEQueryDispatcher()
+
+    sse_content = ["data: {\n", 'data: "key": "value",\n', 'data: "list": [1, 2, 3]\n', "data: }\n\n"]
+
+    async with respx.mock(base_url="http://example.com") as respx_mock:
+        respx_mock.post("/api/query").respond(
+            status_code=200,
+            content="".join(sse_content),
+            headers={"Content-Type": "text/event-stream"},
+        )
+
+        results = await dispatcher.dispatch(mock_source, "find data")
+
+        assert len(results) == 1
+        assert results[0] == {"key": "value", "list": [1, 2, 3]}
+
+    await dispatcher.close()
+
+
+@pytest.mark.asyncio  # type: ignore[misc]
+async def test_sse_dispatch_ignored_fields(mock_source: SourceManifest) -> None:
+    """Test that id, event, retry, and comments are ignored."""
+    dispatcher = SSEQueryDispatcher()
+
+    sse_content = [
+        ": this is a comment\n",
+        "id: 123\n",
+        "event: update\n",
+        "retry: 1000\n",
+        'data: {"valid": true}\n\n',
+        ": another comment\n",
+    ]
+
+    async with respx.mock(base_url="http://example.com") as respx_mock:
+        respx_mock.post("/api/query").respond(
+            status_code=200,
+            content="".join(sse_content),
+            headers={"Content-Type": "text/event-stream"},
+        )
+
+        results = await dispatcher.dispatch(mock_source, "find data")
+
+        assert len(results) == 1
+        assert results[0] == {"valid": True}
+
+    await dispatcher.close()
+
+
+@pytest.mark.asyncio  # type: ignore[misc]
+async def test_sse_dispatch_timeout(mock_source: SourceManifest) -> None:
+    """Test that ReadTimeout is raised and handled."""
+    dispatcher = SSEQueryDispatcher(client=httpx.AsyncClient(timeout=0.1))
+
+    async with respx.mock(base_url="http://example.com") as respx_mock:
+        # Mock a route that sleeps longer than the timeout
+        respx_mock.post("/api/query").mock(side_effect=httpx.ReadTimeout("Timeout"))
+
+        with pytest.raises(httpx.RequestError):  # ReadTimeout is a RequestError
+            await dispatcher.dispatch(mock_source, "find data")
+
+    await dispatcher.close()
+
+
+@pytest.mark.asyncio  # type: ignore[misc]
+async def test_sse_dispatch_concurrent(mock_source: SourceManifest) -> None:
+    """Test concurrent dispatch calls."""
+    dispatcher = SSEQueryDispatcher()
+
+    sse_content = 'data: {"result": "success"}\n\n'
+
+    async with respx.mock(base_url="http://example.com") as respx_mock:
+        respx_mock.post("/api/query").respond(
+            status_code=200,
+            content=sse_content,
+            headers={"Content-Type": "text/event-stream"},
+        )
+
+        tasks = [dispatcher.dispatch(mock_source, f"query {i}") for i in range(5)]
+        results_list = await asyncio.gather(*tasks)
+
+        assert len(results_list) == 5
+        for results in results_list:
+            assert results[0] == {"result": "success"}
+
+    await dispatcher.close()
+
+
+@pytest.mark.asyncio  # type: ignore[misc]
+async def test_sse_dispatch_incomplete_stream(mock_source: SourceManifest) -> None:
+    """Test handling of stream ending without final newline."""
+    dispatcher = SSEQueryDispatcher()
+
+    # Stream ends abruptly after data
+    sse_content = 'data: {"result": "incomplete"}'
+
+    async with respx.mock(base_url="http://example.com") as respx_mock:
+        respx_mock.post("/api/query").respond(
+            status_code=200,
+            content=sse_content,
+            headers={"Content-Type": "text/event-stream"},
+        )
+
+        results = await dispatcher.dispatch(mock_source, "find data")
+
+        assert len(results) == 1
+        assert results[0] == {"result": "incomplete"}
+
+    await dispatcher.close()
+
+
+@pytest.mark.asyncio  # type: ignore[misc]
+async def test_sse_dispatch_incomplete_stream_invalid_json(mock_source: SourceManifest) -> None:
+    """Test handling of stream ending without final newline AND invalid JSON."""
+    dispatcher = SSEQueryDispatcher()
+
+    # Stream ends abruptly after invalid data
+    sse_content = "data: INVALID_JSON_AT_END"
+
+    async with respx.mock(base_url="http://example.com") as respx_mock:
+        respx_mock.post("/api/query").respond(
+            status_code=200,
+            content=sse_content,
+            headers={"Content-Type": "text/event-stream"},
+        )
+
+        results = await dispatcher.dispatch(mock_source, "find data")
+
+        # Should handle exception and return empty list
+        assert len(results) == 0
+
+    await dispatcher.close()

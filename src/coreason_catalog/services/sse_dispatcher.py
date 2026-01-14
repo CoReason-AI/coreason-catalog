@@ -48,22 +48,43 @@ class SSEQueryDispatcher(QueryDispatcher):
                 response.raise_for_status()
 
                 results: List[Any] = []
+                buffer: List[str] = []
+
                 async for line in response.aiter_lines():
-                    if line.startswith("data: "):
-                        data_str = line[6:].strip()
-                        # If data is empty (keep-alive), skip
-                        if not data_str:
-                            continue
+                    # Check for empty line (Event Separator)
+                    if not line.strip():
+                        if buffer:
+                            # Process buffered data
+                            full_data = "".join(buffer)
+                            buffer = []  # Reset buffer
+                            try:
+                                data = json.loads(full_data)
+                                results.append(data)
+                            except json.JSONDecodeError:
+                                logger.warning(f"Failed to parse SSE data from {source.urn}: {full_data}")
+                        continue
 
-                        try:
-                            data = json.loads(data_str)
-                            results.append(data)
-                        except json.JSONDecodeError:
-                            logger.warning(f"Failed to parse SSE data from {source.urn}: {data_str}")
+                    if line.startswith("data:"):
+                        # SSE spec says remove "data:" prefix.
+                        # If there is a space after colon, remove it too.
+                        content = line[5:]
+                        if content.startswith(" "):
+                            content = content[1:]
 
-                # If the stream returns a list of results, we return that list.
-                # If it's a single result split over events, we return the list of parts.
-                # For now, return the list of all data payloads.
+                        buffer.append(content)
+
+                    # We ignore 'id:', 'event:', 'retry:', and comments (starting with ':')
+                    # for the MVP. If specific event types are needed, we can add logic here.
+
+                # Handle case where stream ends without a final newline (flush buffer)
+                if buffer:
+                    full_data = "".join(buffer)
+                    try:
+                        data = json.loads(full_data)
+                        results.append(data)
+                    except json.JSONDecodeError:
+                        logger.warning(f"Failed to parse SSE data from {source.urn}: {full_data}")
+
                 return results
 
         except httpx.HTTPStatusError as e:
