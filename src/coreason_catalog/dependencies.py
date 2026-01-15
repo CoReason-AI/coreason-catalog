@@ -8,7 +8,8 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_catalog
 
-from functools import lru_cache
+from threading import Lock
+from typing import Callable, TypeVar
 
 from fastapi import Depends
 
@@ -20,8 +21,36 @@ from coreason_catalog.services.registry import RegistryService
 from coreason_catalog.services.sse_dispatcher import SSEQueryDispatcher
 from coreason_catalog.services.vector_store import VectorStore
 
+T = TypeVar("T")
 
-@lru_cache
+
+def thread_safe_singleton(func: Callable[[], T]) -> Callable[[], T]:
+    """
+    Decorator to ensure a function is called only once, thread-safely.
+    Similar to lru_cache but with a Lock for strict concurrency safety on init.
+    """
+    lock = Lock()
+    instance: T | None = None
+
+    def wrapper() -> T:
+        nonlocal instance
+        if instance is None:
+            with lock:
+                if instance is None:
+                    instance = func()
+        return instance
+
+    # Expose a way to clear the singleton for testing
+    def cache_clear() -> None:
+        nonlocal instance
+        with lock:
+            instance = None
+
+    wrapper.cache_clear = cache_clear  # type: ignore[attr-defined]
+    return wrapper
+
+
+@thread_safe_singleton
 def get_vector_store() -> VectorStore:
     """
     Singleton provider for VectorStore.
@@ -29,7 +58,7 @@ def get_vector_store() -> VectorStore:
     return VectorStore()
 
 
-@lru_cache
+@thread_safe_singleton
 def get_embedding_service() -> EmbeddingService:
     """
     Singleton provider for EmbeddingService.
@@ -37,7 +66,7 @@ def get_embedding_service() -> EmbeddingService:
     return EmbeddingService()
 
 
-@lru_cache
+@thread_safe_singleton
 def get_policy_engine() -> PolicyEngine:
     """
     Singleton provider for PolicyEngine.
@@ -45,7 +74,7 @@ def get_policy_engine() -> PolicyEngine:
     return PolicyEngine()
 
 
-@lru_cache
+@thread_safe_singleton
 def get_provenance_service() -> ProvenanceService:
     """
     Singleton provider for ProvenanceService.
@@ -53,7 +82,7 @@ def get_provenance_service() -> ProvenanceService:
     return ProvenanceService()
 
 
-@lru_cache
+@thread_safe_singleton
 def get_query_dispatcher() -> QueryDispatcher:
     """
     Singleton provider for QueryDispatcher.

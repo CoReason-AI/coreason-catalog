@@ -37,7 +37,7 @@ def test_get_vector_store_singleton() -> None:
         mock_db.list_tables.return_value.tables = []
 
         # Clear cache first to ensure we hit the mock
-        get_vector_store.cache_clear()
+        get_vector_store.cache_clear()  # type: ignore[attr-defined]
 
         vs1 = get_vector_store()
         vs2 = get_vector_store()
@@ -49,7 +49,7 @@ def test_get_vector_store_singleton() -> None:
 
 def test_get_embedding_service_singleton() -> None:
     with patch("coreason_catalog.services.embedding.TextEmbedding") as mock_embed:
-        get_embedding_service.cache_clear()
+        get_embedding_service.cache_clear()  # type: ignore[attr-defined]
 
         es1 = get_embedding_service()
         es2 = get_embedding_service()
@@ -62,7 +62,7 @@ def test_get_embedding_service_singleton() -> None:
 def test_get_policy_engine_singleton() -> None:
     with patch("coreason_catalog.services.policy_engine.shutil.which") as mock_which:
         mock_which.return_value = "/bin/opa"
-        get_policy_engine.cache_clear()
+        get_policy_engine.cache_clear()  # type: ignore[attr-defined]
 
         pe1 = get_policy_engine()
         pe2 = get_policy_engine()
@@ -72,7 +72,7 @@ def test_get_policy_engine_singleton() -> None:
 
 
 def test_get_provenance_service_singleton() -> None:
-    get_provenance_service.cache_clear()
+    get_provenance_service.cache_clear()  # type: ignore[attr-defined]
 
     ps1 = get_provenance_service()
     ps2 = get_provenance_service()
@@ -82,7 +82,7 @@ def test_get_provenance_service_singleton() -> None:
 
 
 def test_get_query_dispatcher_singleton() -> None:
-    get_query_dispatcher.cache_clear()
+    get_query_dispatcher.cache_clear()  # type: ignore[attr-defined]
 
     qd1 = get_query_dispatcher()
     qd2 = get_query_dispatcher()
