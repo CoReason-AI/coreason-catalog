@@ -154,3 +154,120 @@ def test_register_source_unexpected_error() -> None:
         assert "Internal Server Error" in response.json()["detail"]
     finally:
         app.dependency_overrides = {}
+
+
+def test_register_source_invalid_enum() -> None:
+    """Test that providing an invalid enum value returns a validation error (422)."""
+    payload = {
+        "urn": "urn:coreason:mcp:test_source",
+        "name": "Test Source",
+        "description": "A test source description",
+        "endpoint_url": "sse://localhost:8080",
+        "geo_location": "US",
+        "sensitivity": "TOP_SECRET",  # Invalid enum
+        "owner_group": "Test Group",
+        "access_policy": "allow { input.subject.location == 'US' }",
+    }
+
+    response = client.post("/v1/sources", json=payload)
+
+    assert response.status_code == 422
+    assert "Input should be 'PUBLIC', 'INTERNAL', 'PII' or 'GxP_LOCKED'" in str(response.json())
+
+
+def test_register_source_idempotency() -> None:
+    """Test that registering the same source twice works (idempotency)."""
+    # Setup
+    mock_registry_service = MagicMock()
+    mock_registry_service.register_source.return_value = None
+
+    # Override dependency
+    app.dependency_overrides[get_registry_service] = lambda: mock_registry_service
+
+    payload = {
+        "urn": "urn:coreason:mcp:test_source",
+        "name": "Test Source",
+        "description": "A test source description",
+        "endpoint_url": "sse://localhost:8080",
+        "geo_location": "US",
+        "sensitivity": "PUBLIC",
+        "owner_group": "Test Group",
+        "access_policy": "allow { input.subject.location == 'US' }",
+    }
+
+    try:
+        # First call
+        response1 = client.post("/v1/sources", json=payload)
+        assert response1.status_code == 201
+
+        # Second call
+        response2 = client.post("/v1/sources", json=payload)
+        assert response2.status_code == 201
+
+        # Assert service called twice
+        assert mock_registry_service.register_source.call_count == 2
+    finally:
+        app.dependency_overrides = {}
+
+
+def test_register_source_dependency_failure() -> None:
+    """Test behavior when the dependency itself fails to initialize."""
+
+    # Mock the dependency provider to raise an exception
+    def broken_dependency() -> None:
+        raise RuntimeError("Database connection failed")
+
+    app.dependency_overrides[get_registry_service] = broken_dependency
+
+    payload = {
+        "urn": "urn:coreason:mcp:test_source",
+        "name": "Test Source",
+        "description": "A test source description",
+        "endpoint_url": "sse://localhost:8080",
+        "geo_location": "US",
+        "sensitivity": "PUBLIC",
+        "owner_group": "Test Group",
+        "access_policy": "allow { input.subject.location == 'US' }",
+    }
+
+    # Use a client that doesn't raise server exceptions so we can check the 500 status
+    safe_client = TestClient(app, raise_server_exceptions=False)
+
+    try:
+        response = safe_client.post("/v1/sources", json=payload)
+        # FastAPI handles dependency errors by returning 500
+        assert response.status_code == 500
+    finally:
+        app.dependency_overrides = {}
+
+
+def test_register_source_large_payload() -> None:
+    """Stress test with a large description."""
+    # Setup
+    mock_registry_service = MagicMock()
+    mock_registry_service.register_source.return_value = None
+    app.dependency_overrides[get_registry_service] = lambda: mock_registry_service
+
+    large_description = "A" * 10000  # 10KB string
+
+    payload = {
+        "urn": "urn:coreason:mcp:test_source",
+        "name": "Test Source",
+        "description": large_description,
+        "endpoint_url": "sse://localhost:8080",
+        "geo_location": "US",
+        "sensitivity": "PUBLIC",
+        "owner_group": "Test Group",
+        "access_policy": "allow { input.subject.location == 'US' }",
+    }
+
+    try:
+        response = client.post("/v1/sources", json=payload)
+        assert response.status_code == 201
+
+        # Verify passed to service correctly
+        mock_registry_service.register_source.assert_called_once()
+        call_args = mock_registry_service.register_source.call_args[0][0]
+        assert len(call_args.description) == 10000
+    finally:
+        app.dependency_overrides = {}
