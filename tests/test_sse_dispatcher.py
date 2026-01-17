@@ -1,8 +1,9 @@
 import asyncio
+from typing import Any, AsyncGenerator, List
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
-import respx
 from coreason_catalog.models import DataSensitivity, SourceManifest
 from coreason_catalog.services.sse_dispatcher import SSEQueryDispatcher
 
@@ -21,32 +22,76 @@ def mock_source() -> SourceManifest:
     )
 
 
+async def _async_gen(lines: List[str]) -> AsyncGenerator[str, None]:
+    for line in lines:
+        yield line
+
+
+def create_mock_client(
+    lines: List[str],
+    status_code: int = 200,
+    raise_http_error: bool = False,
+    raise_network_error: bool = False,
+    network_error_cls: Any = httpx.RequestError,
+) -> MagicMock:
+    """
+    Helper to create a mock httpx.AsyncClient that simulates the stream context manager.
+    """
+    mock_client = MagicMock(spec=httpx.AsyncClient)
+    mock_response = MagicMock(spec=httpx.Response)
+
+    # Configure response behavior
+    mock_response.status_code = status_code
+
+    if raise_http_error:
+        # Simulate raise_for_status raising an error
+        error = httpx.HTTPStatusError(message="Error", request=MagicMock(), response=mock_response)
+        mock_response.raise_for_status.side_effect = error
+    else:
+        mock_response.raise_for_status.return_value = None
+
+    # Mock aiter_lines
+    mock_response.aiter_lines.side_effect = lambda: _async_gen(lines)
+
+    # Mock the async context manager for client.stream()
+    async def mock_stream_context(*args: Any, **kwargs: Any) -> Any:
+        if raise_network_error:
+            raise network_error_cls("Network Error", request=MagicMock())
+        return mock_response
+
+    # We need __aenter__ to return the response mock
+    mock_context = MagicMock()
+    mock_context.__aenter__ = AsyncMock(side_effect=mock_stream_context)
+    mock_context.__aexit__ = AsyncMock(return_value=None)
+
+    mock_client.stream.return_value = mock_context
+    # Also mock aclose
+    mock_client.aclose = AsyncMock()
+
+    return mock_client
+
+
 @pytest.mark.asyncio  # type: ignore[misc]
 async def test_sse_dispatch_success(mock_source: SourceManifest) -> None:
-    dispatcher = SSEQueryDispatcher()
-
-    # Mock the SSE response
     sse_content = [
         "event: message\n",
-        'data: {"result": "part1"}\n\n',
+        'data: {"result": "part1"}\n',
+        "\n",
         "event: message\n",
-        'data: {"result": "part2"}\n\n',
+        'data: {"result": "part2"}\n',
+        "\n",
     ]
+    mock_client = create_mock_client(sse_content)
+    dispatcher = SSEQueryDispatcher(client=mock_client)
 
-    async with respx.mock(base_url="http://example.com") as respx_mock:
-        route = respx_mock.post("/api/query").respond(
-            status_code=200,
-            content="".join(sse_content),
-            headers={"Content-Type": "text/event-stream"},
-        )
+    results = await dispatcher.dispatch(mock_source, "find data")
 
-        results = await dispatcher.dispatch(mock_source, "find data")
+    assert len(results) == 2
+    assert results[0] == {"result": "part1"}
+    assert results[1] == {"result": "part2"}
 
-        assert route.called
-        assert len(results) == 2
-        assert results[0] == {"result": "part1"}
-        assert results[1] == {"result": "part2"}
-
+    # Verify endpoint URL handling (sse:// -> http://)
+    mock_client.stream.assert_called_with("POST", "http://example.com/api/query", json={"intent": "find data"})
     await dispatcher.close()
 
 
@@ -62,161 +107,124 @@ async def test_sse_dispatch_success_https() -> None:
         owner_group="TestGroup",
         access_policy="allow { true }",
     )
-    dispatcher = SSEQueryDispatcher()
-
-    # Mock the SSE response
     sse_content = [
         "event: message\n",
-        'data: {"result": "part1"}\n\n',
+        'data: {"result": "part1"}\n',
+        "\n",
     ]
+    mock_client = create_mock_client(sse_content)
+    dispatcher = SSEQueryDispatcher(client=mock_client)
 
-    async with respx.mock(base_url="https://example.com") as respx_mock:
-        route = respx_mock.post("/api/query").respond(
-            status_code=200,
-            content="".join(sse_content),
-            headers={"Content-Type": "text/event-stream"},
-        )
+    results = await dispatcher.dispatch(source, "find data")
 
-        results = await dispatcher.dispatch(source, "find data")
+    assert len(results) == 1
+    assert results[0] == {"result": "part1"}
 
-        assert route.called
-        assert len(results) == 1
-        assert results[0] == {"result": "part1"}
-
+    # Verify endpoint URL handling (sses:// -> https://)
+    mock_client.stream.assert_called_with("POST", "https://example.com/api/query", json={"intent": "find data"})
     await dispatcher.close()
 
 
 @pytest.mark.asyncio  # type: ignore[misc]
 async def test_sse_dispatch_http_error(mock_source: SourceManifest) -> None:
-    dispatcher = SSEQueryDispatcher()
+    mock_client = create_mock_client([], status_code=500, raise_http_error=True)
+    dispatcher = SSEQueryDispatcher(client=mock_client)
 
-    async with respx.mock(base_url="http://example.com") as respx_mock:
-        respx_mock.post("/api/query").respond(status_code=500)
-
-        with pytest.raises(httpx.HTTPStatusError):
-            await dispatcher.dispatch(mock_source, "find data")
+    with pytest.raises(httpx.HTTPStatusError):
+        await dispatcher.dispatch(mock_source, "find data")
 
     await dispatcher.close()
 
 
 @pytest.mark.asyncio  # type: ignore[misc]
 async def test_sse_dispatch_network_error(mock_source: SourceManifest) -> None:
-    dispatcher = SSEQueryDispatcher()
+    mock_client = create_mock_client([], raise_network_error=True, network_error_cls=httpx.ConnectError)
+    dispatcher = SSEQueryDispatcher(client=mock_client)
 
-    async with respx.mock(base_url="http://example.com") as respx_mock:
-        respx_mock.post("/api/query").mock(side_effect=httpx.ConnectError("Connection failed"))
-
-        with pytest.raises(httpx.RequestError):
-            await dispatcher.dispatch(mock_source, "find data")
+    with pytest.raises(httpx.RequestError):
+        await dispatcher.dispatch(mock_source, "find data")
 
     await dispatcher.close()
 
 
 @pytest.mark.asyncio  # type: ignore[misc]
 async def test_sse_dispatch_malformed_json_and_empty_lines(mock_source: SourceManifest) -> None:
-    dispatcher = SSEQueryDispatcher()
-
     sse_content = [
-        'data: {"valid": true}\n\n',
-        "data: \n\n",  # Empty data (keep-alive) - handled by buffer reset/empty check logic
-        "data: INVALID_JSON\n\n",
+        'data: {"valid": true}\n',
+        "\n",
+        "data: \n",
+        "\n",
+        "data: INVALID_JSON\n",
+        "\n",
     ]
+    mock_client = create_mock_client(sse_content)
+    dispatcher = SSEQueryDispatcher(client=mock_client)
 
-    async with respx.mock(base_url="http://example.com") as respx_mock:
-        respx_mock.post("/api/query").respond(
-            status_code=200,
-            content="".join(sse_content),
-            headers={"Content-Type": "text/event-stream"},
-        )
+    results = await dispatcher.dispatch(mock_source, "find data")
 
-        results = await dispatcher.dispatch(mock_source, "find data")
-
-        # Should skip invalid JSON and empty lines
-        assert len(results) == 1
-        assert results[0] == {"valid": True}
-
+    # Should skip invalid JSON and empty lines
+    assert len(results) == 1
+    assert results[0] == {"valid": True}
     await dispatcher.close()
 
 
 @pytest.mark.asyncio  # type: ignore[misc]
 async def test_sse_dispatch_generic_exception(mock_source: SourceManifest) -> None:
-    # To test generic exception, we can mock something that raises a non-httpx exception
-    # Or mock the 'stream' method on the client to raise Exception
+    # Simulate generic exception during stream setup
+    mock_client = MagicMock()
+    mock_client.stream.side_effect = Exception("Generic Error")
 
-    mock_client = httpx.AsyncClient()
-
-    import unittest.mock
-
-    mock_client.stream = unittest.mock.MagicMock(side_effect=Exception("Generic Error"))
-
-    dispatcher_with_mock = SSEQueryDispatcher(client=mock_client)
+    dispatcher = SSEQueryDispatcher(client=mock_client)
 
     with pytest.raises(Exception, match="Generic Error"):
-        await dispatcher_with_mock.dispatch(mock_source, "find data")
+        await dispatcher.dispatch(mock_source, "find data")
 
 
 @pytest.mark.asyncio  # type: ignore[misc]
 async def test_sse_dispatch_multiline_data(mock_source: SourceManifest) -> None:
     """Test handling of JSON split across multiple data lines."""
-    dispatcher = SSEQueryDispatcher()
+    # Ensure lines are simulated as yielding line-by-line including the final empty line
+    sse_content = ["data: {\n", 'data: "key": "value",\n', 'data: "list": [1, 2, 3]\n', "data: }\n", "\n"]
+    mock_client = create_mock_client(sse_content)
+    dispatcher = SSEQueryDispatcher(client=mock_client)
 
-    sse_content = ["data: {\n", 'data: "key": "value",\n', 'data: "list": [1, 2, 3]\n', "data: }\n\n"]
+    results = await dispatcher.dispatch(mock_source, "find data")
 
-    async with respx.mock(base_url="http://example.com") as respx_mock:
-        respx_mock.post("/api/query").respond(
-            status_code=200,
-            content="".join(sse_content),
-            headers={"Content-Type": "text/event-stream"},
-        )
-
-        results = await dispatcher.dispatch(mock_source, "find data")
-
-        assert len(results) == 1
-        assert results[0] == {"key": "value", "list": [1, 2, 3]}
-
+    assert len(results) == 1
+    assert results[0] == {"key": "value", "list": [1, 2, 3]}
     await dispatcher.close()
 
 
 @pytest.mark.asyncio  # type: ignore[misc]
 async def test_sse_dispatch_ignored_fields(mock_source: SourceManifest) -> None:
     """Test that id, event, retry, and comments are ignored."""
-    dispatcher = SSEQueryDispatcher()
-
     sse_content = [
         ": this is a comment\n",
         "id: 123\n",
         "event: update\n",
         "retry: 1000\n",
-        'data: {"valid": true}\n\n',
+        'data: {"valid": true}\n',
+        "\n",
         ": another comment\n",
     ]
+    mock_client = create_mock_client(sse_content)
+    dispatcher = SSEQueryDispatcher(client=mock_client)
 
-    async with respx.mock(base_url="http://example.com") as respx_mock:
-        respx_mock.post("/api/query").respond(
-            status_code=200,
-            content="".join(sse_content),
-            headers={"Content-Type": "text/event-stream"},
-        )
+    results = await dispatcher.dispatch(mock_source, "find data")
 
-        results = await dispatcher.dispatch(mock_source, "find data")
-
-        assert len(results) == 1
-        assert results[0] == {"valid": True}
-
+    assert len(results) == 1
+    assert results[0] == {"valid": True}
     await dispatcher.close()
 
 
 @pytest.mark.asyncio  # type: ignore[misc]
 async def test_sse_dispatch_timeout(mock_source: SourceManifest) -> None:
     """Test that ReadTimeout is raised and handled."""
-    dispatcher = SSEQueryDispatcher(client=httpx.AsyncClient(timeout=0.1))
+    mock_client = create_mock_client([], raise_network_error=True, network_error_cls=httpx.ReadTimeout)
+    dispatcher = SSEQueryDispatcher(client=mock_client)
 
-    async with respx.mock(base_url="http://example.com") as respx_mock:
-        # Mock a route that sleeps longer than the timeout
-        respx_mock.post("/api/query").mock(side_effect=httpx.ReadTimeout("Timeout"))
-
-        with pytest.raises(httpx.RequestError):  # ReadTimeout is a RequestError
-            await dispatcher.dispatch(mock_source, "find data")
+    with pytest.raises(httpx.RequestError):
+        await dispatcher.dispatch(mock_source, "find data")
 
     await dispatcher.close()
 
@@ -224,23 +232,17 @@ async def test_sse_dispatch_timeout(mock_source: SourceManifest) -> None:
 @pytest.mark.asyncio  # type: ignore[misc]
 async def test_sse_dispatch_concurrent(mock_source: SourceManifest) -> None:
     """Test concurrent dispatch calls."""
-    dispatcher = SSEQueryDispatcher()
+    # We need a fresh iterator for each call, create_mock_client handles this by lambda
+    sse_content = ['data: {"result": "success"}\n', "\n"]
+    mock_client = create_mock_client(sse_content)
+    dispatcher = SSEQueryDispatcher(client=mock_client)
 
-    sse_content = 'data: {"result": "success"}\n\n'
+    tasks = [dispatcher.dispatch(mock_source, f"query {i}") for i in range(5)]
+    results_list = await asyncio.gather(*tasks)
 
-    async with respx.mock(base_url="http://example.com") as respx_mock:
-        respx_mock.post("/api/query").respond(
-            status_code=200,
-            content=sse_content,
-            headers={"Content-Type": "text/event-stream"},
-        )
-
-        tasks = [dispatcher.dispatch(mock_source, f"query {i}") for i in range(5)]
-        results_list = await asyncio.gather(*tasks)
-
-        assert len(results_list) == 5
-        for results in results_list:
-            assert results[0] == {"result": "success"}
+    assert len(results_list) == 5
+    for results in results_list:
+        assert results[0] == {"result": "success"}
 
     await dispatcher.close()
 
@@ -248,44 +250,50 @@ async def test_sse_dispatch_concurrent(mock_source: SourceManifest) -> None:
 @pytest.mark.asyncio  # type: ignore[misc]
 async def test_sse_dispatch_incomplete_stream(mock_source: SourceManifest) -> None:
     """Test handling of stream ending without final newline."""
-    dispatcher = SSEQueryDispatcher()
+    sse_content = ['data: {"result": "incomplete"}']
+    mock_client = create_mock_client(sse_content)
+    dispatcher = SSEQueryDispatcher(client=mock_client)
 
-    # Stream ends abruptly after data
-    sse_content = 'data: {"result": "incomplete"}'
+    results = await dispatcher.dispatch(mock_source, "find data")
 
-    async with respx.mock(base_url="http://example.com") as respx_mock:
-        respx_mock.post("/api/query").respond(
-            status_code=200,
-            content=sse_content,
-            headers={"Content-Type": "text/event-stream"},
-        )
-
-        results = await dispatcher.dispatch(mock_source, "find data")
-
-        assert len(results) == 1
-        assert results[0] == {"result": "incomplete"}
-
+    assert len(results) == 1
+    assert results[0] == {"result": "incomplete"}
     await dispatcher.close()
 
 
 @pytest.mark.asyncio  # type: ignore[misc]
 async def test_sse_dispatch_incomplete_stream_invalid_json(mock_source: SourceManifest) -> None:
     """Test handling of stream ending without final newline AND invalid JSON."""
-    dispatcher = SSEQueryDispatcher()
+    sse_content = ["data: INVALID_JSON_AT_END"]
+    mock_client = create_mock_client(sse_content)
+    dispatcher = SSEQueryDispatcher(client=mock_client)
 
-    # Stream ends abruptly after invalid data
-    sse_content = "data: INVALID_JSON_AT_END"
+    results = await dispatcher.dispatch(mock_source, "find data")
 
-    async with respx.mock(base_url="http://example.com") as respx_mock:
-        respx_mock.post("/api/query").respond(
-            status_code=200,
-            content=sse_content,
-            headers={"Content-Type": "text/event-stream"},
-        )
-
-        results = await dispatcher.dispatch(mock_source, "find data")
-
-        # Should handle exception and return empty list
-        assert len(results) == 0
-
+    # Should handle exception and return empty list
+    assert len(results) == 0
     await dispatcher.close()
+
+
+@pytest.mark.asyncio  # type: ignore[misc]
+async def test_sse_dispatcher_lifecycle() -> None:
+    """Test that close() calls client.aclose() when client is owned."""
+    # Patch httpx.AsyncClient at the module level where it is used
+    with patch("coreason_catalog.services.sse_dispatcher.httpx.AsyncClient") as MockClientCls:
+        mock_client_instance = AsyncMock()
+        MockClientCls.return_value = mock_client_instance
+
+        dispatcher = SSEQueryDispatcher()  # Should create its own client
+        assert dispatcher._owns_client is True
+
+        await dispatcher.close()
+
+        mock_client_instance.aclose.assert_awaited_once()
+
+    # Test when client is NOT owned
+    mock_shared_client = AsyncMock()
+    dispatcher_shared = SSEQueryDispatcher(client=mock_shared_client)
+    assert dispatcher_shared._owns_client is False
+
+    await dispatcher_shared.close()
+    mock_shared_client.aclose.assert_not_awaited()
