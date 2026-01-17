@@ -2,9 +2,11 @@ import asyncio
 
 import httpx
 import pytest
-import respx
 from coreason_catalog.models import DataSensitivity, SourceManifest
 from coreason_catalog.services.sse_dispatcher import SSEQueryDispatcher
+
+# Check for respx module
+respx = pytest.importorskip("respx")
 
 
 @pytest.fixture  # type: ignore[misc]
