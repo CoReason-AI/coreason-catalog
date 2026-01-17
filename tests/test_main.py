@@ -1,4 +1,8 @@
+from unittest.mock import MagicMock
+
+from coreason_catalog.dependencies import get_registry_service
 from coreason_catalog.main import app
+from coreason_catalog.models import SourceManifest
 from fastapi.testclient import TestClient
 
 client = TestClient(app)
@@ -8,3 +12,145 @@ def test_health_check() -> None:
     response = client.get("/health")
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
+
+
+def test_register_source_success() -> None:
+    # Setup
+    mock_registry_service = MagicMock()
+    mock_registry_service.register_source.return_value = None
+
+    # Override dependency
+    app.dependency_overrides[get_registry_service] = lambda: mock_registry_service
+
+    payload = {
+        "urn": "urn:coreason:mcp:test_source",
+        "name": "Test Source",
+        "description": "A test source description",
+        "endpoint_url": "sse://localhost:8080",
+        "geo_location": "US",
+        "sensitivity": "PUBLIC",
+        "owner_group": "Test Group",
+        "access_policy": "allow { input.subject.location == 'US' }",
+    }
+
+    try:
+        # Act
+        response = client.post("/v1/sources", json=payload)
+
+        # Assert
+        assert response.status_code == 201
+        assert response.json() == {"status": "registered", "urn": payload["urn"]}
+
+        mock_registry_service.register_source.assert_called_once()
+        call_args = mock_registry_service.register_source.call_args[0][0]
+        assert isinstance(call_args, SourceManifest)
+        assert call_args.urn == payload["urn"]
+    finally:
+        app.dependency_overrides = {}
+
+
+def test_register_source_validation_error() -> None:
+    # Missing required field 'urn'
+    payload = {
+        "name": "Test Source",
+        "description": "A test source description",
+        "endpoint_url": "sse://localhost:8080",
+        "geo_location": "US",
+        "sensitivity": "PUBLIC",
+        "owner_group": "Test Group",
+        "access_policy": "allow { input.subject.location == 'US' }",
+    }
+
+    response = client.post("/v1/sources", json=payload)
+
+    assert response.status_code == 422
+
+
+def test_register_source_value_error() -> None:
+    # Setup
+    mock_registry_service = MagicMock()
+    mock_registry_service.register_source.side_effect = ValueError("Embedding failed")
+
+    # Override dependency
+    app.dependency_overrides[get_registry_service] = lambda: mock_registry_service
+
+    payload = {
+        "urn": "urn:coreason:mcp:error_source",
+        "name": "Error Source",
+        "description": "A test source description",
+        "endpoint_url": "sse://localhost:8080",
+        "geo_location": "US",
+        "sensitivity": "PUBLIC",
+        "owner_group": "Test Group",
+        "access_policy": "allow { input.subject.location == 'US' }",
+    }
+
+    try:
+        # Act
+        response = client.post("/v1/sources", json=payload)
+
+        # Assert
+        assert response.status_code == 500
+        assert "Embedding failed" in response.json()["detail"]
+    finally:
+        app.dependency_overrides = {}
+
+
+def test_register_source_runtime_error() -> None:
+    # Setup
+    mock_registry_service = MagicMock()
+    mock_registry_service.register_source.side_effect = RuntimeError("DB error")
+
+    # Override dependency
+    app.dependency_overrides[get_registry_service] = lambda: mock_registry_service
+
+    payload = {
+        "urn": "urn:coreason:mcp:error_source",
+        "name": "Error Source",
+        "description": "A test source description",
+        "endpoint_url": "sse://localhost:8080",
+        "geo_location": "US",
+        "sensitivity": "PUBLIC",
+        "owner_group": "Test Group",
+        "access_policy": "allow { input.subject.location == 'US' }",
+    }
+
+    try:
+        # Act
+        response = client.post("/v1/sources", json=payload)
+
+        # Assert
+        assert response.status_code == 500
+        assert "DB error" in response.json()["detail"]
+    finally:
+        app.dependency_overrides = {}
+
+
+def test_register_source_unexpected_error() -> None:
+    # Setup
+    mock_registry_service = MagicMock()
+    mock_registry_service.register_source.side_effect = Exception("Unknown")
+
+    # Override dependency
+    app.dependency_overrides[get_registry_service] = lambda: mock_registry_service
+
+    payload = {
+        "urn": "urn:coreason:mcp:error_source",
+        "name": "Error Source",
+        "description": "A test source description",
+        "endpoint_url": "sse://localhost:8080",
+        "geo_location": "US",
+        "sensitivity": "PUBLIC",
+        "owner_group": "Test Group",
+        "access_policy": "allow { input.subject.location == 'US' }",
+    }
+
+    try:
+        # Act
+        response = client.post("/v1/sources", json=payload)
+
+        # Assert
+        assert response.status_code == 500
+        assert "Internal Server Error" in response.json()["detail"]
+    finally:
+        app.dependency_overrides = {}
