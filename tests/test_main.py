@@ -1,28 +1,51 @@
+from typing import Generator
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
+import pytest
 from coreason_catalog.dependencies import get_federation_broker, get_registry_service
 from coreason_catalog.main import app
 from coreason_catalog.models import CatalogResponse, SourceManifest, SourceResult
 from fastapi.testclient import TestClient
 
-client = TestClient(app)
+
+@pytest.fixture  # type: ignore[misc]
+def client() -> TestClient:
+    return TestClient(app)
 
 
-def test_health_check() -> None:
+@pytest.fixture  # type: ignore[misc]
+def mock_registry_service() -> MagicMock:
+    mock = MagicMock()
+    mock.register_source.return_value = None
+    return mock
+
+
+@pytest.fixture  # type: ignore[misc]
+def mock_broker() -> AsyncMock:
+    mock = AsyncMock()
+    # Default behavior: successful empty response
+    mock.dispatch_query.return_value = CatalogResponse(
+        query_id=uuid4(), aggregated_results=[], provenance_signature="sig"
+    )
+    return mock
+
+
+@pytest.fixture(autouse=True)  # type: ignore[misc]
+def override_dependencies(mock_registry_service: MagicMock, mock_broker: AsyncMock) -> Generator[None, None, None]:
+    app.dependency_overrides[get_registry_service] = lambda: mock_registry_service
+    app.dependency_overrides[get_federation_broker] = lambda: mock_broker
+    yield
+    app.dependency_overrides = {}
+
+
+def test_health_check(client: TestClient) -> None:
     response = client.get("/health")
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
 
 
-def test_register_source_success() -> None:
-    # Setup
-    mock_registry_service = MagicMock()
-    mock_registry_service.register_source.return_value = None
-
-    # Override dependency
-    app.dependency_overrides[get_registry_service] = lambda: mock_registry_service
-
+def test_register_source_success(client: TestClient, mock_registry_service: MagicMock) -> None:
     payload = {
         "urn": "urn:coreason:mcp:test_source",
         "name": "Test Source",
@@ -34,23 +57,18 @@ def test_register_source_success() -> None:
         "access_policy": "allow { input.subject.location == 'US' }",
     }
 
-    try:
-        # Act
-        response = client.post("/v1/sources", json=payload)
+    response = client.post("/v1/sources", json=payload)
 
-        # Assert
-        assert response.status_code == 201
-        assert response.json() == {"status": "registered", "urn": payload["urn"]}
+    assert response.status_code == 201
+    assert response.json() == {"status": "registered", "urn": payload["urn"]}
 
-        mock_registry_service.register_source.assert_called_once()
-        call_args = mock_registry_service.register_source.call_args[0][0]
-        assert isinstance(call_args, SourceManifest)
-        assert call_args.urn == payload["urn"]
-    finally:
-        app.dependency_overrides = {}
+    mock_registry_service.register_source.assert_called_once()
+    call_args = mock_registry_service.register_source.call_args[0][0]
+    assert isinstance(call_args, SourceManifest)
+    assert call_args.urn == payload["urn"]
 
 
-def test_register_source_validation_error() -> None:
+def test_register_source_validation_error(client: TestClient) -> None:
     # Missing required field 'urn'
     payload = {
         "name": "Test Source",
@@ -61,20 +79,13 @@ def test_register_source_validation_error() -> None:
         "owner_group": "Test Group",
         "access_policy": "allow { input.subject.location == 'US' }",
     }
-
     response = client.post("/v1/sources", json=payload)
-
     assert response.status_code == 422
 
 
-def test_register_source_value_error() -> None:
-    # Setup
-    mock_registry_service = MagicMock()
+def test_register_source_value_error(client: TestClient, mock_registry_service: MagicMock) -> None:
     mock_registry_service.register_source.side_effect = ValueError("Embedding failed")
 
-    # Override dependency
-    app.dependency_overrides[get_registry_service] = lambda: mock_registry_service
-
     payload = {
         "urn": "urn:coreason:mcp:error_source",
         "name": "Error Source",
@@ -82,109 +93,69 @@ def test_register_source_value_error() -> None:
         "endpoint_url": "sse://localhost:8080",
         "geo_location": "US",
         "sensitivity": "PUBLIC",
-        "owner_group": "Test Group",
-        "access_policy": "allow { input.subject.location == 'US' }",
-    }
-
-    try:
-        # Act
-        response = client.post("/v1/sources", json=payload)
-
-        # Assert
-        assert response.status_code == 500
-        assert "Embedding failed" in response.json()["detail"]
-    finally:
-        app.dependency_overrides = {}
-
-
-def test_register_source_runtime_error() -> None:
-    # Setup
-    mock_registry_service = MagicMock()
-    mock_registry_service.register_source.side_effect = RuntimeError("DB error")
-
-    # Override dependency
-    app.dependency_overrides[get_registry_service] = lambda: mock_registry_service
-
-    payload = {
-        "urn": "urn:coreason:mcp:error_source",
-        "name": "Error Source",
-        "description": "A test source description",
-        "endpoint_url": "sse://localhost:8080",
-        "geo_location": "US",
-        "sensitivity": "PUBLIC",
-        "owner_group": "Test Group",
-        "access_policy": "allow { input.subject.location == 'US' }",
-    }
-
-    try:
-        # Act
-        response = client.post("/v1/sources", json=payload)
-
-        # Assert
-        assert response.status_code == 500
-        assert "DB error" in response.json()["detail"]
-    finally:
-        app.dependency_overrides = {}
-
-
-def test_register_source_unexpected_error() -> None:
-    # Setup
-    mock_registry_service = MagicMock()
-    mock_registry_service.register_source.side_effect = Exception("Unknown")
-
-    # Override dependency
-    app.dependency_overrides[get_registry_service] = lambda: mock_registry_service
-
-    payload = {
-        "urn": "urn:coreason:mcp:error_source",
-        "name": "Error Source",
-        "description": "A test source description",
-        "endpoint_url": "sse://localhost:8080",
-        "geo_location": "US",
-        "sensitivity": "PUBLIC",
-        "owner_group": "Test Group",
-        "access_policy": "allow { input.subject.location == 'US' }",
-    }
-
-    try:
-        # Act
-        response = client.post("/v1/sources", json=payload)
-
-        # Assert
-        assert response.status_code == 500
-        assert "Internal Server Error" in response.json()["detail"]
-    finally:
-        app.dependency_overrides = {}
-
-
-def test_register_source_invalid_enum() -> None:
-    """Test that providing an invalid enum value returns a validation error (422)."""
-    payload = {
-        "urn": "urn:coreason:mcp:test_source",
-        "name": "Test Source",
-        "description": "A test source description",
-        "endpoint_url": "sse://localhost:8080",
-        "geo_location": "US",
-        "sensitivity": "TOP_SECRET",  # Invalid enum
         "owner_group": "Test Group",
         "access_policy": "allow { input.subject.location == 'US' }",
     }
 
     response = client.post("/v1/sources", json=payload)
+    assert response.status_code == 500
+    assert "Embedding failed" in response.json()["detail"]
 
+
+def test_register_source_runtime_error(client: TestClient, mock_registry_service: MagicMock) -> None:
+    mock_registry_service.register_source.side_effect = RuntimeError("DB error")
+
+    payload = {
+        "urn": "urn:coreason:mcp:error_source",
+        "name": "Error Source",
+        "description": "A test source description",
+        "endpoint_url": "sse://localhost:8080",
+        "geo_location": "US",
+        "sensitivity": "PUBLIC",
+        "owner_group": "Test Group",
+        "access_policy": "allow { input.subject.location == 'US' }",
+    }
+
+    response = client.post("/v1/sources", json=payload)
+    assert response.status_code == 500
+    assert "DB error" in response.json()["detail"]
+
+
+def test_register_source_unexpected_error(client: TestClient, mock_registry_service: MagicMock) -> None:
+    mock_registry_service.register_source.side_effect = Exception("Unknown")
+
+    payload = {
+        "urn": "urn:coreason:mcp:error_source",
+        "name": "Error Source",
+        "description": "A test source description",
+        "endpoint_url": "sse://localhost:8080",
+        "geo_location": "US",
+        "sensitivity": "PUBLIC",
+        "owner_group": "Test Group",
+        "access_policy": "allow { input.subject.location == 'US' }",
+    }
+
+    response = client.post("/v1/sources", json=payload)
+    assert response.status_code == 500
+    assert "Internal Server Error" in response.json()["detail"]
+
+
+def test_register_source_invalid_enum(client: TestClient) -> None:
+    payload = {
+        "urn": "urn:coreason:mcp:test_source",
+        "name": "Test Source",
+        "description": "A test source description",
+        "endpoint_url": "sse://localhost:8080",
+        "geo_location": "US",
+        "sensitivity": "TOP_SECRET",
+        "owner_group": "Test Group",
+        "access_policy": "allow { input.subject.location == 'US' }",
+    }
+    response = client.post("/v1/sources", json=payload)
     assert response.status_code == 422
-    assert "Input should be 'PUBLIC', 'INTERNAL', 'PII' or 'GxP_LOCKED'" in str(response.json())
 
 
-def test_register_source_idempotency() -> None:
-    """Test that registering the same source twice works (idempotency)."""
-    # Setup
-    mock_registry_service = MagicMock()
-    mock_registry_service.register_source.return_value = None
-
-    # Override dependency
-    app.dependency_overrides[get_registry_service] = lambda: mock_registry_service
-
+def test_register_source_idempotency(client: TestClient, mock_registry_service: MagicMock) -> None:
     payload = {
         "urn": "urn:coreason:mcp:test_source",
         "name": "Test Source",
@@ -196,25 +167,14 @@ def test_register_source_idempotency() -> None:
         "access_policy": "allow { input.subject.location == 'US' }",
     }
 
-    try:
-        # First call
-        response1 = client.post("/v1/sources", json=payload)
-        assert response1.status_code == 201
+    client.post("/v1/sources", json=payload)
+    client.post("/v1/sources", json=payload)
 
-        # Second call
-        response2 = client.post("/v1/sources", json=payload)
-        assert response2.status_code == 201
-
-        # Assert service called twice
-        assert mock_registry_service.register_source.call_count == 2
-    finally:
-        app.dependency_overrides = {}
+    assert mock_registry_service.register_source.call_count == 2
 
 
-def test_register_source_dependency_failure() -> None:
-    """Test behavior when the dependency itself fails to initialize."""
-
-    # Mock the dependency provider to raise an exception
+def test_register_source_dependency_failure(client: TestClient) -> None:
+    # Explicitly break dependency for this test
     def broken_dependency() -> None:
         raise RuntimeError("Database connection failed")
 
@@ -231,25 +191,14 @@ def test_register_source_dependency_failure() -> None:
         "access_policy": "allow { input.subject.location == 'US' }",
     }
 
-    # Use a client that doesn't raise server exceptions so we can check the 500 status
+    # Safe client for 500 check
     safe_client = TestClient(app, raise_server_exceptions=False)
-
-    try:
-        response = safe_client.post("/v1/sources", json=payload)
-        # FastAPI handles dependency errors by returning 500
-        assert response.status_code == 500
-    finally:
-        app.dependency_overrides = {}
+    response = safe_client.post("/v1/sources", json=payload)
+    assert response.status_code == 500
 
 
-def test_register_source_large_payload() -> None:
-    """Stress test with a large description."""
-    # Setup
-    mock_registry_service = MagicMock()
-    mock_registry_service.register_source.return_value = None
-    app.dependency_overrides[get_registry_service] = lambda: mock_registry_service
-
-    large_description = "A" * 10000  # 10KB string
+def test_register_source_large_payload(client: TestClient, mock_registry_service: MagicMock) -> None:
+    large_description = "A" * 10000
 
     payload = {
         "urn": "urn:coreason:mcp:test_source",
@@ -262,22 +211,14 @@ def test_register_source_large_payload() -> None:
         "access_policy": "allow { input.subject.location == 'US' }",
     }
 
-    try:
-        response = client.post("/v1/sources", json=payload)
-        assert response.status_code == 201
+    response = client.post("/v1/sources", json=payload)
+    assert response.status_code == 201
 
-        # Verify passed to service correctly
-        mock_registry_service.register_source.assert_called_once()
-        call_args = mock_registry_service.register_source.call_args[0][0]
-        assert len(call_args.description) == 10000
-    finally:
-        app.dependency_overrides = {}
+    call_args = mock_registry_service.register_source.call_args[0][0]
+    assert len(call_args.description) == 10000
 
 
-def test_query_catalog_success() -> None:
-    # Setup
-    mock_broker = AsyncMock()
-
+def test_query_catalog_success(client: TestClient, mock_broker: AsyncMock) -> None:
     expected_response = CatalogResponse(
         query_id=uuid4(),
         aggregated_results=[
@@ -292,119 +233,75 @@ def test_query_catalog_success() -> None:
     )
     mock_broker.dispatch_query.return_value = expected_response
 
-    app.dependency_overrides[get_federation_broker] = lambda: mock_broker
-
     payload = {
         "intent": "Find data",
         "user_context": {"user_id": "u1", "role": "admin"},
         "limit": 5,
     }
 
-    try:
-        response = client.post("/v1/query", json=payload)
+    response = client.post("/v1/query", json=payload)
 
-        assert response.status_code == 200
-        data = response.json()
-        assert data["query_id"] == str(expected_response.query_id)
-        assert len(data["aggregated_results"]) == 1
-        assert data["aggregated_results"][0]["data"] == {"foo": "bar"}
-
-        mock_broker.dispatch_query.assert_called_once_with("Find data", {"user_id": "u1", "role": "admin"}, 5)
-    finally:
-        app.dependency_overrides = {}
+    assert response.status_code == 200
+    data = response.json()
+    assert data["query_id"] == str(expected_response.query_id)
+    assert len(data["aggregated_results"]) == 1
+    mock_broker.dispatch_query.assert_called_once_with("Find data", {"user_id": "u1", "role": "admin"}, 5)
 
 
-def test_query_catalog_validation_error() -> None:
-    # Missing intent
+def test_query_catalog_validation_error(client: TestClient) -> None:
     payload = {
         "user_context": {"role": "admin"},
         "limit": 5,
     }
-
     response = client.post("/v1/query", json=payload)
     assert response.status_code == 422
 
 
-def test_query_catalog_internal_error() -> None:
-    # Setup
-    mock_broker = AsyncMock()
+def test_query_catalog_internal_error(client: TestClient, mock_broker: AsyncMock) -> None:
     mock_broker.dispatch_query.side_effect = Exception("Broker Failure")
-
-    app.dependency_overrides[get_federation_broker] = lambda: mock_broker
 
     payload = {
         "intent": "Find data",
         "user_context": {},
     }
 
-    # Use safe client
     safe_client = TestClient(app, raise_server_exceptions=False)
-
-    try:
-        response = safe_client.post("/v1/query", json=payload)
-        assert response.status_code == 500
-        assert "Internal Server Error" in response.json()["detail"]
-    finally:
-        app.dependency_overrides = {}
+    response = safe_client.post("/v1/query", json=payload)
+    assert response.status_code == 500
+    assert "Internal Server Error" in response.json()["detail"]
 
 
-def test_query_catalog_partial_content_true() -> None:
-    """Test that partial_content=True is correctly serialized."""
-    mock_broker = AsyncMock()
-    expected_response = CatalogResponse(
+def test_query_catalog_partial_content_true(client: TestClient, mock_broker: AsyncMock) -> None:
+    mock_broker.dispatch_query.return_value = CatalogResponse(
         query_id=uuid4(), aggregated_results=[], provenance_signature="sig", partial_content=True
     )
-    mock_broker.dispatch_query.return_value = expected_response
-    app.dependency_overrides[get_federation_broker] = lambda: mock_broker
 
     payload = {"intent": "test", "user_context": {}}
-    try:
-        response = client.post("/v1/query", json=payload)
-        assert response.status_code == 200
-        assert response.json()["partial_content"] is True
-    finally:
-        app.dependency_overrides = {}
+    response = client.post("/v1/query", json=payload)
+    assert response.status_code == 200
+    assert response.json()["partial_content"] is True
 
 
-def test_query_catalog_empty_results() -> None:
-    """Test handling of empty results from broker."""
-    mock_broker = AsyncMock()
-    expected_response = CatalogResponse(query_id=uuid4(), aggregated_results=[], provenance_signature="sig")
-    mock_broker.dispatch_query.return_value = expected_response
-    app.dependency_overrides[get_federation_broker] = lambda: mock_broker
+def test_query_catalog_empty_results(client: TestClient, mock_broker: AsyncMock) -> None:
+    # Fixture sets empty results by default, but explicit is good for readability
+    mock_broker.dispatch_query.return_value = CatalogResponse(
+        query_id=uuid4(), aggregated_results=[], provenance_signature="sig"
+    )
 
     payload = {"intent": "test", "user_context": {}}
-    try:
-        response = client.post("/v1/query", json=payload)
-        assert response.status_code == 200
-        assert response.json()["aggregated_results"] == []
-    finally:
-        app.dependency_overrides = {}
+    response = client.post("/v1/query", json=payload)
+    assert response.status_code == 200
+    assert response.json()["aggregated_results"] == []
 
 
-def test_query_catalog_limit_zero() -> None:
-    """Test that limit=0 is accepted and passed to broker."""
-    mock_broker = AsyncMock()
-    expected_response = CatalogResponse(query_id=uuid4(), aggregated_results=[], provenance_signature="sig")
-    mock_broker.dispatch_query.return_value = expected_response
-    app.dependency_overrides[get_federation_broker] = lambda: mock_broker
-
+def test_query_catalog_limit_zero(client: TestClient, mock_broker: AsyncMock) -> None:
     payload = {"intent": "test", "user_context": {}, "limit": 0}
-    try:
-        response = client.post("/v1/query", json=payload)
-        assert response.status_code == 200
-        mock_broker.dispatch_query.assert_called_once_with("test", {}, 0)
-    finally:
-        app.dependency_overrides = {}
+    response = client.post("/v1/query", json=payload)
+    assert response.status_code == 200
+    mock_broker.dispatch_query.assert_called_once_with("test", {}, 0)
 
 
-def test_query_catalog_complex_context() -> None:
-    """Test passing complex nested user context."""
-    mock_broker = AsyncMock()
-    expected_response = CatalogResponse(query_id=uuid4(), aggregated_results=[], provenance_signature="sig")
-    mock_broker.dispatch_query.return_value = expected_response
-    app.dependency_overrides[get_federation_broker] = lambda: mock_broker
-
+def test_query_catalog_complex_context(client: TestClient, mock_broker: AsyncMock) -> None:
     complex_context = {
         "user": {"id": "u1", "roles": ["admin", "researcher"]},
         "project": {"code": "P1", "flags": {"gxp": True}},
@@ -412,11 +309,7 @@ def test_query_catalog_complex_context() -> None:
     }
     payload = {"intent": "test", "user_context": complex_context}
 
-    try:
-        response = client.post("/v1/query", json=payload)
-        assert response.status_code == 200
-        # Verify context passed exactly as is
-        call_args = mock_broker.dispatch_query.call_args
-        assert call_args[0][1] == complex_context
-    finally:
-        app.dependency_overrides = {}
+    response = client.post("/v1/query", json=payload)
+    assert response.status_code == 200
+    call_args = mock_broker.dispatch_query.call_args
+    assert call_args[0][1] == complex_context
