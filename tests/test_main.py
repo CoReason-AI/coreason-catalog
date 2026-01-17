@@ -1,8 +1,9 @@
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
+from uuid import uuid4
 
-from coreason_catalog.dependencies import get_registry_service
+from coreason_catalog.dependencies import get_federation_broker, get_registry_service
 from coreason_catalog.main import app
-from coreason_catalog.models import SourceManifest
+from coreason_catalog.models import CatalogResponse, SourceManifest, SourceResult
 from fastapi.testclient import TestClient
 
 client = TestClient(app)
@@ -269,5 +270,79 @@ def test_register_source_large_payload() -> None:
         mock_registry_service.register_source.assert_called_once()
         call_args = mock_registry_service.register_source.call_args[0][0]
         assert len(call_args.description) == 10000
+    finally:
+        app.dependency_overrides = {}
+
+
+def test_query_catalog_success() -> None:
+    # Setup
+    mock_broker = AsyncMock()
+
+    expected_response = CatalogResponse(
+        query_id=uuid4(),
+        aggregated_results=[
+            SourceResult(
+                source_urn="urn:test",
+                status="SUCCESS",
+                data={"foo": "bar"},
+                latency_ms=10.0,
+            )
+        ],
+        provenance_signature="signed_provenance",
+    )
+    mock_broker.dispatch_query.return_value = expected_response
+
+    app.dependency_overrides[get_federation_broker] = lambda: mock_broker
+
+    payload = {
+        "intent": "Find data",
+        "user_context": {"user_id": "u1", "role": "admin"},
+        "limit": 5,
+    }
+
+    try:
+        response = client.post("/v1/query", json=payload)
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["query_id"] == str(expected_response.query_id)
+        assert len(data["aggregated_results"]) == 1
+        assert data["aggregated_results"][0]["data"] == {"foo": "bar"}
+
+        mock_broker.dispatch_query.assert_called_once_with("Find data", {"user_id": "u1", "role": "admin"}, 5)
+    finally:
+        app.dependency_overrides = {}
+
+
+def test_query_catalog_validation_error() -> None:
+    # Missing intent
+    payload = {
+        "user_context": {"role": "admin"},
+        "limit": 5,
+    }
+
+    response = client.post("/v1/query", json=payload)
+    assert response.status_code == 422
+
+
+def test_query_catalog_internal_error() -> None:
+    # Setup
+    mock_broker = AsyncMock()
+    mock_broker.dispatch_query.side_effect = Exception("Broker Failure")
+
+    app.dependency_overrides[get_federation_broker] = lambda: mock_broker
+
+    payload = {
+        "intent": "Find data",
+        "user_context": {},
+    }
+
+    # Use safe client
+    safe_client = TestClient(app, raise_server_exceptions=False)
+
+    try:
+        response = safe_client.post("/v1/query", json=payload)
+        assert response.status_code == 500
+        assert "Internal Server Error" in response.json()["detail"]
     finally:
         app.dependency_overrides = {}

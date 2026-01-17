@@ -1,8 +1,9 @@
 from fastapi import Depends, FastAPI, HTTPException
 from starlette import status
 
-from coreason_catalog.dependencies import get_registry_service
-from coreason_catalog.models import SourceManifest
+from coreason_catalog.dependencies import get_federation_broker, get_registry_service
+from coreason_catalog.models import CatalogResponse, QueryRequest, SourceManifest
+from coreason_catalog.services.broker import FederationBroker
 from coreason_catalog.services.registry import RegistryService
 from coreason_catalog.utils.logger import logger
 
@@ -42,4 +43,25 @@ async def register_source(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)) from e
     except Exception as e:
         logger.error(f"Unexpected error during registration: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal Server Error") from e
+
+
+@app.post(
+    "/v1/query",
+    status_code=status.HTTP_200_OK,
+    response_model=CatalogResponse,
+)  # type: ignore[misc]
+async def query_catalog(
+    request: QueryRequest,
+    broker: FederationBroker = Depends(get_federation_broker),  # noqa: B008
+) -> CatalogResponse:
+    """
+    Query the catalog.
+    """
+    logger.info(f"Received query request: {request.intent}")
+    try:
+        response = await broker.dispatch_query(request.intent, request.user_context, request.limit)
+        return response
+    except Exception as e:
+        logger.error(f"Unexpected error during query dispatch: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal Server Error") from e
