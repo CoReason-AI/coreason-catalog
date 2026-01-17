@@ -346,3 +346,77 @@ def test_query_catalog_internal_error() -> None:
         assert "Internal Server Error" in response.json()["detail"]
     finally:
         app.dependency_overrides = {}
+
+
+def test_query_catalog_partial_content_true() -> None:
+    """Test that partial_content=True is correctly serialized."""
+    mock_broker = AsyncMock()
+    expected_response = CatalogResponse(
+        query_id=uuid4(), aggregated_results=[], provenance_signature="sig", partial_content=True
+    )
+    mock_broker.dispatch_query.return_value = expected_response
+    app.dependency_overrides[get_federation_broker] = lambda: mock_broker
+
+    payload = {"intent": "test", "user_context": {}}
+    try:
+        response = client.post("/v1/query", json=payload)
+        assert response.status_code == 200
+        assert response.json()["partial_content"] is True
+    finally:
+        app.dependency_overrides = {}
+
+
+def test_query_catalog_empty_results() -> None:
+    """Test handling of empty results from broker."""
+    mock_broker = AsyncMock()
+    expected_response = CatalogResponse(query_id=uuid4(), aggregated_results=[], provenance_signature="sig")
+    mock_broker.dispatch_query.return_value = expected_response
+    app.dependency_overrides[get_federation_broker] = lambda: mock_broker
+
+    payload = {"intent": "test", "user_context": {}}
+    try:
+        response = client.post("/v1/query", json=payload)
+        assert response.status_code == 200
+        assert response.json()["aggregated_results"] == []
+    finally:
+        app.dependency_overrides = {}
+
+
+def test_query_catalog_limit_zero() -> None:
+    """Test that limit=0 is accepted and passed to broker."""
+    mock_broker = AsyncMock()
+    expected_response = CatalogResponse(query_id=uuid4(), aggregated_results=[], provenance_signature="sig")
+    mock_broker.dispatch_query.return_value = expected_response
+    app.dependency_overrides[get_federation_broker] = lambda: mock_broker
+
+    payload = {"intent": "test", "user_context": {}, "limit": 0}
+    try:
+        response = client.post("/v1/query", json=payload)
+        assert response.status_code == 200
+        mock_broker.dispatch_query.assert_called_once_with("test", {}, 0)
+    finally:
+        app.dependency_overrides = {}
+
+
+def test_query_catalog_complex_context() -> None:
+    """Test passing complex nested user context."""
+    mock_broker = AsyncMock()
+    expected_response = CatalogResponse(query_id=uuid4(), aggregated_results=[], provenance_signature="sig")
+    mock_broker.dispatch_query.return_value = expected_response
+    app.dependency_overrides[get_federation_broker] = lambda: mock_broker
+
+    complex_context = {
+        "user": {"id": "u1", "roles": ["admin", "researcher"]},
+        "project": {"code": "P1", "flags": {"gxp": True}},
+        "session": {"tokens": [1, 2, 3]},
+    }
+    payload = {"intent": "test", "user_context": complex_context}
+
+    try:
+        response = client.post("/v1/query", json=payload)
+        assert response.status_code == 200
+        # Verify context passed exactly as is
+        call_args = mock_broker.dispatch_query.call_args
+        assert call_args[0][1] == complex_context
+    finally:
+        app.dependency_overrides = {}
