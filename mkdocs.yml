@@ -3,3 +3,6 @@ theme:
   name: material
 nav:
   - Home: index.md
+  - Architecture: architecture.md
+  - Usage & Vignettes: usage.md
+  - PRD: prd.md
