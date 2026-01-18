@@ -23,7 +23,7 @@ FROM python:3.12-slim AS runtime
 # Install OPA
 # hadolint ignore=DL3008
 RUN apt-get update && apt-get install -y --no-install-recommends curl \
-    && curl -L -o /usr/local/bin/opa https://openpolicyagent.org/downloads/v0.61.0/opa_linux_amd64_static \
+    && curl -L -o /usr/local/bin/opa https://openpolicyagent.org/downloads/v1.12.3/opa_linux_amd64_static \
     && chmod +x /usr/local/bin/opa \
     && apt-get purge -y --auto-remove curl \
     && rm -rf /var/lib/apt/lists/*
