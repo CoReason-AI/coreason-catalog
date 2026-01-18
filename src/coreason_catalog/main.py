@@ -1,16 +1,18 @@
-# Copyright (c) 2025 CoReason, Inc.
-#
-# This software is proprietary and dual-licensed.
-# Licensed under the Prosperity Public License 3.0 (the "License").
-# A copy of the license is available at https://prosperitylicense.com/versions/3.0.0
-# For details, see the LICENSE file.
-# Commercial use beyond a 30-day trial requires a separate license.
-#
-# Source Code: https://github.com/CoReason-AI/coreason_catalog
+from fastapi import FastAPI
 
+from coreason_catalog.api.routes import router
 from coreason_catalog.utils.logger import logger
 
+app = FastAPI(title="coreason-catalog", version="0.1.0")
 
-def hello_world() -> str:
-    logger.info("Hello World!")
-    return "Hello World!"
+
+@app.get("/health", response_model=dict[str, str])  # type: ignore[misc]
+async def health_check() -> dict[str, str]:
+    """
+    Health check endpoint.
+    """
+    logger.info("Health check requested")
+    return {"status": "ok"}
+
+
+app.include_router(router)

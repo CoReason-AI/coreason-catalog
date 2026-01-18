@@ -8,27 +8,48 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_catalog
 
-import os
-from pathlib import Path
-from unittest.mock import patch, MagicMock
-from coreason_catalog.utils.logger import logger
+import importlib
+import sys
+import types
+from unittest.mock import MagicMock, patch
 
-def test_logger_initialization():
-    """Test that the logger is initialized correctly and creates the log directory."""
-    # Since the logger is initialized on import, we check side effects
 
-    # Check if logs directory creation is handled
-    # Note: running this test might actually create the directory in the test environment
-    # if it doesn't exist.
+# Ensure we have the module, not the object
+# We use a helper function to safely get the module for reloading
+def get_logger_module() -> types.ModuleType:
+    module_name = "coreason_catalog.utils.logger"
+    if module_name in sys.modules:
+        return sys.modules[module_name]
+    else:
+        return importlib.import_module(module_name)
 
-    log_path = Path("logs")
-    assert log_path.exists()
-    assert log_path.is_dir()
 
-    # Verify app.log creation if it was logged to (it might be empty or not created until log)
-    # logger.info("Test log")
-    # assert (log_path / "app.log").exists()
+def test_logger_directory_creation() -> None:
+    """Test that the logs directory is created if it does not exist."""
+    logger_module = get_logger_module()
 
-def test_logger_exports():
-    """Test that logger is exported."""
-    assert logger is not None
+    with patch("pathlib.Path") as mock_path_cls:
+        mock_path_instance = MagicMock()
+        mock_path_cls.return_value = mock_path_instance
+        mock_path_instance.exists.return_value = False
+
+        # We must reload the specific module file
+        importlib.reload(logger_module)
+
+        # Verify
+        mock_path_cls.assert_called_with("logs")
+        mock_path_instance.mkdir.assert_called_with(parents=True, exist_ok=True)
+
+
+def test_logger_directory_exists() -> None:
+    """Test that mkdir is not called if logs directory exists."""
+    logger_module = get_logger_module()
+
+    with patch("pathlib.Path") as mock_path_cls:
+        mock_path_instance = MagicMock()
+        mock_path_cls.return_value = mock_path_instance
+        mock_path_instance.exists.return_value = True
+
+        importlib.reload(logger_module)
+
+        mock_path_instance.mkdir.assert_not_called()
