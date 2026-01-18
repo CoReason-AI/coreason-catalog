@@ -1,7 +1,19 @@
 # coreason-catalog
 
-coreason-catalog
+**Dynamic Registry and Routing Plane for the CoReason Ecosystem**
 
+`coreason-catalog` serves as the "Cartographer" and active gateway for the CoReason data mesh. It enables agents to discover data sources based on semantic meaning and enforces data sovereignty policies at query time.
+
+**Core Philosophy:** "The Map controls the Territory. Route by Meaning, Filter by Policy."
+
+## Documentation
+
+Full documentation is available in the `docs/` folder:
+
+-   **[Home](docs/index.md)**
+-   **[Product Requirements (PRD)](docs/prd.md)**
+-   **[Architecture](docs/architecture.md)**
+-   **[Usage Guide](docs/usage.md)**
 [![CI/CD](https://github.com/CoReason-AI/coreason_catalog/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/CoReason-AI/coreason_catalog/actions/workflows/ci-cd.yml)
 [![Docker](https://github.com/CoReason-AI/coreason_catalog/actions/workflows/docker.yml/badge.svg)](https://github.com/CoReason-AI/coreason_catalog/actions/workflows/docker.yml)
 [![Publish](https://github.com/CoReason-AI/coreason_catalog/actions/workflows/publish.yml/badge.svg)](https://github.com/CoReason-AI/coreason_catalog/actions/workflows/publish.yml)
@@ -16,28 +28,36 @@ coreason-catalog
 
 ### Prerequisites
 
-- Python 3.12+
-- Poetry
+-   Python 3.12+
+-   Poetry
 
 ### Installation
 
 1.  Clone the repository:
-    ```sh
-    git clone https://github.com/example/example.git
-    cd my_python_project
+    ```bash
+    git clone https://github.com/CoReason-AI/coreason_catalog.git
+    cd coreason_catalog
     ```
 2.  Install dependencies:
-    ```sh
+    ```bash
     poetry install
     ```
 
-### Usage
+### Running the Server
+
+To start the catalog server locally:
+
+```bash
+poetry run uvicorn coreason_catalog.main:app --reload
+```
+
+### Development
 
 -   Run the linter:
-    ```sh
+    ```bash
     poetry run pre-commit run --all-files
     ```
 -   Run the tests:
-    ```sh
+    ```bash
     poetry run pytest
     ```
