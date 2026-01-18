@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-OPA_VERSION="v0.61.0"
+OPA_VERSION="v1.12.3"
 OPA_URL="https://openpolicyagent.org/downloads/${OPA_VERSION}/opa_linux_amd64_static"
 
 echo "Installing OPA ${OPA_VERSION}..."
