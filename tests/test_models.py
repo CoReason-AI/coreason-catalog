@@ -1,9 +1,8 @@
 from uuid import uuid4
 
 import pytest
-from pydantic import ValidationError
-
 from coreason_catalog.models import CatalogResponse, DataSensitivity, SourceManifest, SourceResult
+from pydantic import ValidationError
 
 
 def test_data_sensitivity_enum() -> None:
@@ -45,3 +44,15 @@ def test_catalog_response_valid() -> None:
     response = CatalogResponse(query_id=uuid4(), aggregated_results=[result], provenance_signature="sig_123")
     assert response.aggregated_results[0].status == "SUCCESS"
     assert response.provenance_signature == "sig_123"
+    assert response.partial_content is False  # Default check
+
+
+def test_catalog_response_with_partial_content() -> None:
+    result = SourceResult(source_urn="urn:coreason:mcp:test", status="ERROR", data={}, latency_ms=10.5)
+    response = CatalogResponse(
+        query_id=uuid4(),
+        aggregated_results=[result],
+        provenance_signature="sig_123",
+        partial_content=True,
+    )
+    assert response.partial_content is True

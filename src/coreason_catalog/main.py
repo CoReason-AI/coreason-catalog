@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 
+from coreason_catalog.api.routes import router
 from coreason_catalog.utils.logger import logger
 
 app = FastAPI(title="coreason-catalog", version="0.1.0")
@@ -12,3 +13,6 @@ async def health_check() -> dict[str, str]:
     """
     logger.info("Health check requested")
     return {"status": "ok"}
+
+
+app.include_router(router)

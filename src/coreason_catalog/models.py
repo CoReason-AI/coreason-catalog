@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import Any, List, Literal
+from typing import Any, Dict, List, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -38,3 +38,10 @@ class CatalogResponse(BaseModel):
     query_id: UUID
     aggregated_results: List[SourceResult]
     provenance_signature: str  # W3C PROV signature
+    partial_content: bool = False  # Warning flag for fail-safe aggregation
+
+
+class QueryRequest(BaseModel):
+    intent: str = Field(..., description="The natural language query intent")
+    user_context: Dict[str, Any] = Field(..., description="The user context for policy evaluation")
+    limit: int = Field(10, description="Max number of sources to query")
