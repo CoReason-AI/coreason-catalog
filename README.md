@@ -14,12 +14,12 @@ Full documentation is available in the `docs/` folder:
 -   **[Product Requirements (PRD)](docs/prd.md)**
 -   **[Architecture](docs/architecture.md)**
 -   **[Usage Guide](docs/usage.md)**
-[![CI/CD](https://github.com/CoReason-AI/coreason_catalog/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/CoReason-AI/coreason_catalog/actions/workflows/ci-cd.yml)
-[![Docker](https://github.com/CoReason-AI/coreason_catalog/actions/workflows/docker.yml/badge.svg)](https://github.com/CoReason-AI/coreason_catalog/actions/workflows/docker.yml)
-[![Publish](https://github.com/CoReason-AI/coreason_catalog/actions/workflows/publish.yml/badge.svg)](https://github.com/CoReason-AI/coreason_catalog/actions/workflows/publish.yml)
-[![PyPI version](https://img.shields.io/pypi/v/coreason_catalog.svg)](https://pypi.org/project/coreason_catalog/)
-[![PyPI - Python Version](https://img.shields.io/pypi/pyversions/coreason_catalog.svg)](https://pypi.org/project/coreason_catalog/)
-[![codecov](https://codecov.io/gh/CoReason-AI/coreason_catalog/branch/main/graph/badge.svg)](https://codecov.io/gh/CoReason-AI/coreason_catalog)
+[![CI/CD](https://github.com/CoReason-AI/coreason-catalog/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/CoReason-AI/coreason-catalog/actions/workflows/ci-cd.yml)
+[![Docker](https://github.com/CoReason-AI/coreason-catalog/actions/workflows/docker.yml/badge.svg)](https://github.com/CoReason-AI/coreason-catalog/actions/workflows/docker.yml)
+[![Publish](https://github.com/CoReason-AI/coreason-catalog/actions/workflows/publish.yml/badge.svg)](https://github.com/CoReason-AI/coreason-catalog/actions/workflows/publish.yml)
+[![PyPI version](https://img.shields.io/pypi/v/coreason-catalog.svg)](https://pypi.org/project/coreason-catalog/)
+[![PyPI - Python Version](https://img.shields.io/pypi/pyversions/coreason-catalog.svg)](https://pypi.org/project/coreason-catalog/)
+[![codecov](https://codecov.io/gh/CoReason-AI/coreason-catalog/branch/main/graph/badge.svg)](https://codecov.io/gh/CoReason-AI/coreason-catalog)
 [![License](https://img.shields.io/badge/license-Prosperity_3.0-blue)](LICENSE)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![pre-commit](https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit&logoColor=white)](https://github.com/pre-commit/pre-commit)
@@ -35,8 +35,8 @@ Full documentation is available in the `docs/` folder:
 
 1.  Clone the repository:
     ```bash
-    git clone https://github.com/CoReason-AI/coreason_catalog.git
-    cd coreason_catalog
+    git clone https://github.com/CoReason-AI/coreason-catalog.git
+    cd coreason-catalog
     ```
 2.  Install dependencies:
     ```bash
