@@ -258,7 +258,7 @@ def test_query_catalog_success(client: TestClient, mock_broker: AsyncMock) -> No
 
 def test_query_catalog_validation_error(client: TestClient) -> None:
     payload = {
-        "user_context": {"role": "admin"}, # Missing user_id/email
+        "user_context": {"role": "admin"},  # Missing user_id/email
         "limit": 5,
     }
     response = client.post("/v1/query", json=payload)
@@ -321,7 +321,7 @@ def test_query_catalog_complex_context(client: TestClient, mock_broker: AsyncMoc
         "user_id": "u1",
         "email": "test@example.com",
         "groups": ["admin", "researcher"],
-        "extra": {"project": "P1"}
+        "extra": {"project": "P1"},
     }
     payload = {"intent": "test", "user_context": valid_context}
 

@@ -3,7 +3,7 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from coreason_identity.models import UserContext
 

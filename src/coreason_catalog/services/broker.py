@@ -2,7 +2,7 @@ import asyncio
 import time
 import uuid
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List
+from typing import Any, List
 
 from coreason_identity.models import UserContext
 

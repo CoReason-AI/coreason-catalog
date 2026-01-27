@@ -337,6 +337,7 @@ async def test_complex_federation_scenario(
 
     # 2. Policy: Block EU (index 1), Allow others
     mock_policy_engine.check_access.return_value = True
+
     def policy_side_effect(policy: str, input_data: dict[str, Any]) -> bool:
         obj = input_data.get("object", {})
         if obj.get("urn") == sample_manifest_eu.urn:

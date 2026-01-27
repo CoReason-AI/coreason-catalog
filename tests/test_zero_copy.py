@@ -1,5 +1,3 @@
-import json
-from typing import List
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -16,9 +14,15 @@ class TestPolicyEngineACLs:
         engine = PolicyEngine(opa_path="mock")
         user_context = UserContext(user_id="sa", email="sa@bot.com", claims={"is_service_account": True})
         asset = SourceManifest(
-            urn="urn:1", name="n", description="d", endpoint_url="url",
-            geo_location="loc", sensitivity=DataSensitivity.PUBLIC, owner_group="og", access_policy="pol",
-            acls=["group:A"]
+            urn="urn:1",
+            name="n",
+            description="d",
+            endpoint_url="url",
+            geo_location="loc",
+            sensitivity=DataSensitivity.PUBLIC,
+            owner_group="og",
+            access_policy="pol",
+            acls=["group:A"],
         )
         assert engine.check_access(asset, user_context) is True
 
@@ -26,9 +30,15 @@ class TestPolicyEngineACLs:
         engine = PolicyEngine(opa_path="mock")
         user_context = UserContext(user_id="u1", email="u1@example.com", groups=["group:A"])
         asset = SourceManifest(
-            urn="urn:1", name="n", description="d", endpoint_url="url",
-            geo_location="loc", sensitivity=DataSensitivity.PUBLIC, owner_group="og", access_policy="pol",
-            acls=["group:A", "group:B"]
+            urn="urn:1",
+            name="n",
+            description="d",
+            endpoint_url="url",
+            geo_location="loc",
+            sensitivity=DataSensitivity.PUBLIC,
+            owner_group="og",
+            access_policy="pol",
+            acls=["group:A", "group:B"],
         )
         assert engine.check_access(asset, user_context) is True
 
@@ -36,9 +46,15 @@ class TestPolicyEngineACLs:
         engine = PolicyEngine(opa_path="mock")
         user_context = UserContext(user_id="u1", email="u1@example.com", groups=["group:C"])
         asset = SourceManifest(
-            urn="urn:1", name="n", description="d", endpoint_url="url",
-            geo_location="loc", sensitivity=DataSensitivity.PUBLIC, owner_group="og", access_policy="pol",
-            acls=["group:A", "group:B"]
+            urn="urn:1",
+            name="n",
+            description="d",
+            endpoint_url="url",
+            geo_location="loc",
+            sensitivity=DataSensitivity.PUBLIC,
+            owner_group="og",
+            access_policy="pol",
+            acls=["group:A", "group:B"],
         )
         assert engine.check_access(asset, user_context) is False
 

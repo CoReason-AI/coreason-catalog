@@ -1,4 +1,3 @@
-import json
 from typing import Optional
 
 from coreason_identity.models import UserContext

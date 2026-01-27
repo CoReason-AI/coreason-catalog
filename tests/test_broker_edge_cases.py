@@ -122,6 +122,7 @@ async def test_mixed_blocked_and_success(
 
     # Policy Logic
     mock_policy_engine.check_access.return_value = True
+
     def policy_side_effect(policy: str, input_data: dict[str, Any]) -> bool:
         return bool(input_data["object"]["urn"] == "urn:allowed")
 
