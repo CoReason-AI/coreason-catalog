@@ -1,4 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException
+import json
+from typing import Optional
+
+from fastapi import APIRouter, Depends, Header, HTTPException
 from starlette import status
 
 from coreason_catalog.dependencies import get_federation_broker, get_registry_service
@@ -44,14 +47,27 @@ async def register_source(
 )  # type: ignore[misc]
 async def query_catalog(
     request: QueryRequest,
+    x_user_context: Optional[str] = Header(None, alias="X-User-Context"),
     broker: FederationBroker = Depends(get_federation_broker),  # noqa: B008
 ) -> CatalogResponse:
     """
     Query the catalog.
     """
     logger.info(f"Received query request: {request.intent}")
+
+    user_context = request.user_context
+    if x_user_context:
+        try:
+            parsed_context = json.loads(x_user_context)
+            if isinstance(parsed_context, dict):
+                user_context = parsed_context
+            else:
+                logger.warning("X-User-Context header is not a valid JSON object. Fallback to body.")
+        except json.JSONDecodeError:
+            logger.warning("Failed to parse X-User-Context header. Fallback to body.")
+
     try:
-        response = await broker.dispatch_query(request.intent, request.user_context, request.limit)
+        response = await broker.dispatch_query(request.intent, user_context, request.limit)
         return response
     except Exception as e:
         logger.error(f"Unexpected error during query dispatch: {e}")
