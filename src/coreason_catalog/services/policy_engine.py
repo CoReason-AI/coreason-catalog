@@ -3,7 +3,7 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from coreason_catalog.utils.logger import logger
 
@@ -139,3 +139,21 @@ class PolicyEngine:
             Path(policy_path).unlink(missing_ok=True)
             if "input_path" in locals():
                 Path(input_path).unlink(missing_ok=True)
+
+    def check_acls(self, required_acls: List[str], user_groups: List[str]) -> bool:
+        """
+        Check if the user has any of the required ACLs.
+
+        Args:
+            required_acls: List of required security groups (e.g. ["group:A", "group:B"]).
+                           If empty, access is allowed (or governed by other policies).
+            user_groups: List of groups the user belongs to.
+
+        Returns:
+            True if access is allowed, False otherwise.
+        """
+        if not required_acls:
+            return True
+
+        # Check intersection
+        return not set(required_acls).isdisjoint(user_groups)

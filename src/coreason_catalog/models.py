@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import Any, Dict, List, Literal
+from typing import Any, Dict, List, Literal, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -17,6 +17,8 @@ class SourceManifest(BaseModel):
     name: str = Field(..., description="Human readable name of the source")
     description: str = Field(..., description="Natural language description for semantic search")
     endpoint_url: str = Field(..., description="The endpoint URL, e.g. sse://10.0.0.5:8080")
+    source_pointer: Optional[Dict[str, str]] = Field(None, description="Pointer to external data source")
+    acls: List[str] = Field(default_factory=list, description="List of security group IDs for row-level security")
 
     # Governance Metadata
     geo_location: str = Field(..., description="Geolocation tag, e.g. EU")
