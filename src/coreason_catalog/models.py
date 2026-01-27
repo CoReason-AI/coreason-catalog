@@ -2,6 +2,7 @@ from enum import Enum
 from typing import Any, Dict, List, Literal, Optional
 from uuid import UUID
 
+from coreason_identity.models import UserContext
 from pydantic import BaseModel, Field
 
 
@@ -45,5 +46,5 @@ class CatalogResponse(BaseModel):
 
 class QueryRequest(BaseModel):
     intent: str = Field(..., description="The natural language query intent")
-    user_context: Dict[str, Any] = Field(..., description="The user context for policy evaluation")
+    user_context: UserContext = Field(..., description="The user context for policy evaluation")
     limit: int = Field(10, description="Max number of sources to query")

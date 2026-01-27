@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
+from coreason_identity.models import UserContext
 from fastapi.testclient import TestClient
 
 from coreason_catalog.dependencies import get_federation_broker, get_registry_service
@@ -236,7 +237,7 @@ def test_query_catalog_success(client: TestClient, mock_broker: AsyncMock) -> No
 
     payload = {
         "intent": "Find data",
-        "user_context": {"user_id": "u1", "role": "admin"},
+        "user_context": {"user_id": "u1", "email": "test@example.com", "role": "admin"},
         "limit": 5,
     }
 
@@ -246,12 +247,18 @@ def test_query_catalog_success(client: TestClient, mock_broker: AsyncMock) -> No
     data = response.json()
     assert data["query_id"] == str(expected_response.query_id)
     assert len(data["aggregated_results"]) == 1
-    mock_broker.dispatch_query.assert_called_once_with("Find data", {"user_id": "u1", "role": "admin"}, 5)
+
+    # Assert called with proper UserContext object
+    call_args = mock_broker.dispatch_query.call_args
+    assert call_args[0][0] == "Find data"
+    assert isinstance(call_args[0][1], UserContext)
+    assert call_args[0][1].user_id == "u1"
+    assert call_args[0][2] == 5
 
 
 def test_query_catalog_validation_error(client: TestClient) -> None:
     payload = {
-        "user_context": {"role": "admin"},
+        "user_context": {"role": "admin"},  # Missing user_id/email
         "limit": 5,
     }
     response = client.post("/v1/query", json=payload)
@@ -263,7 +270,7 @@ def test_query_catalog_internal_error(client: TestClient, mock_broker: AsyncMock
 
     payload = {
         "intent": "Find data",
-        "user_context": {},
+        "user_context": {"user_id": "u1", "email": "test@example.com"},
     }
 
     safe_client = TestClient(app, raise_server_exceptions=False)
@@ -277,7 +284,8 @@ def test_query_catalog_partial_content_true(client: TestClient, mock_broker: Asy
         query_id=uuid4(), aggregated_results=[], provenance_signature="sig", partial_content=True
     )
 
-    payload = {"intent": "test", "user_context": {}}
+    payload = {"intent": "test", "user_context": {"user_id": "u1", "email": "test@example.com"}}
+    payload = {"intent": "test", "user_context": {"user_id": "u1", "email": "test@example.com"}}
     response = client.post("/v1/query", json=payload)
     assert response.status_code == 200
     assert response.json()["partial_content"] is True
@@ -289,28 +297,36 @@ def test_query_catalog_empty_results(client: TestClient, mock_broker: AsyncMock)
         query_id=uuid4(), aggregated_results=[], provenance_signature="sig"
     )
 
-    payload = {"intent": "test", "user_context": {}}
+    payload = {"intent": "test", "user_context": {"user_id": "u1", "email": "test@example.com"}}
     response = client.post("/v1/query", json=payload)
     assert response.status_code == 200
     assert response.json()["aggregated_results"] == []
 
 
 def test_query_catalog_limit_zero(client: TestClient, mock_broker: AsyncMock) -> None:
-    payload = {"intent": "test", "user_context": {}, "limit": 0}
+    payload = {"intent": "test", "user_context": {"user_id": "u1", "email": "test@example.com"}, "limit": 0}
     response = client.post("/v1/query", json=payload)
     assert response.status_code == 200
-    mock_broker.dispatch_query.assert_called_once_with("test", {}, 0)
+    call_args = mock_broker.dispatch_query.call_args
+    assert call_args[0][0] == "test"
+    assert isinstance(call_args[0][1], UserContext)
+    assert call_args[0][1].user_id == "u1"
+    assert call_args[0][2] == 0
 
 
 def test_query_catalog_complex_context(client: TestClient, mock_broker: AsyncMock) -> None:
-    complex_context = {
-        "user": {"id": "u1", "roles": ["admin", "researcher"]},
-        "project": {"code": "P1", "flags": {"gxp": True}},
-        "session": {"tokens": [1, 2, 3]},
+    # UserContext expects flat fields like user_id, email, groups etc.
+    # complex_context should be adapted to match UserContext or just valid fields
+    valid_context = {
+        "user_id": "u1",
+        "email": "test@example.com",
+        "groups": ["admin", "researcher"],
+        "extra": {"project": "P1"},
     }
-    payload = {"intent": "test", "user_context": complex_context}
+    payload = {"intent": "test", "user_context": valid_context}
 
     response = client.post("/v1/query", json=payload)
     assert response.status_code == 200
     call_args = mock_broker.dispatch_query.call_args
-    assert call_args[0][1] == complex_context
+    assert isinstance(call_args[0][1], UserContext)
+    assert call_args[0][1].user_id == "u1"
