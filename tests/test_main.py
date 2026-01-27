@@ -3,10 +3,11 @@ from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
+from fastapi.testclient import TestClient
+
 from coreason_catalog.dependencies import get_federation_broker, get_registry_service
 from coreason_catalog.main import app
 from coreason_catalog.models import CatalogResponse, SourceManifest, SourceResult
-from fastapi.testclient import TestClient
 
 
 @pytest.fixture  # type: ignore[misc]

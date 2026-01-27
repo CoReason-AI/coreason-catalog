@@ -3,6 +3,7 @@ from typing import List, Optional
 
 import lancedb
 import pyarrow as pa
+
 from coreason_catalog.models import DataSensitivity, SourceManifest
 
 

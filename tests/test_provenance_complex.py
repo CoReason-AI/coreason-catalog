@@ -2,6 +2,7 @@ import json
 import uuid
 
 import pytest
+
 from coreason_catalog.models import SourceResult
 from coreason_catalog.services.provenance import ProvenanceService
 
