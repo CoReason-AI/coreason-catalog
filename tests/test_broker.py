@@ -2,6 +2,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from coreason_identity.models import UserContext
 
 from coreason_catalog.models import (
     CatalogResponse,
@@ -105,7 +106,7 @@ async def test_semantic_routing_discovery(
     Verify that broker finds candidates, checks policy, and aggregates results.
     """
     # Setup
-    user_context = {"location": "US", "role": "admin"}
+    user_context = UserContext(user_id="u1", email="test@example.com", groups=["admin"])
     intent = "Find patient data"
 
     # Vector Search returns both US and EU sources
@@ -113,6 +114,8 @@ async def test_semantic_routing_discovery(
 
     # Policy Engine allows both (for this test case, assume user has global access)
     mock_policy_engine.evaluate_policy.return_value = True
+    # Also mock check_access to return True
+    mock_policy_engine.check_access.return_value = True
 
     # Dispatcher returns data
     mock_dispatcher.dispatch.side_effect = [
@@ -149,7 +152,7 @@ async def test_gdpr_firewall(
     User is US. EU source should be blocked.
     """
     # Setup
-    user_context = {"location": "US"}
+    user_context = UserContext(user_id="u1", email="test@example.com", groups=[])
     intent = "Global data"
 
     mock_vector_store.search.return_value = [sample_manifest_us, sample_manifest_eu]
@@ -158,6 +161,7 @@ async def test_gdpr_firewall(
     # Call 1 (US Source) -> Allow
     # Call 2 (EU Source) -> Deny
     mock_policy_engine.evaluate_policy.side_effect = [True, False]
+    mock_policy_engine.check_access.return_value = True
 
     mock_dispatcher.dispatch.return_value = {"data": "ok"}
 
@@ -190,6 +194,7 @@ async def test_fail_safe_aggregation(
     # Setup
     mock_vector_store.search.return_value = [sample_manifest_us, sample_manifest_eu]
     mock_policy_engine.evaluate_policy.return_value = True
+    mock_policy_engine.check_access.return_value = True
 
     # Dispatcher: US works, EU fails
     async def side_effect(source: SourceManifest, intent: str) -> Any:
@@ -200,7 +205,7 @@ async def test_fail_safe_aggregation(
     mock_dispatcher.dispatch.side_effect = side_effect
 
     # Act
-    response = await broker.dispatch_query("query", {})
+    response = await broker.dispatch_query("query", UserContext(user_id="u1", email="test@example.com"))
 
     # Assert
     assert len(response.aggregated_results) == 2
@@ -223,7 +228,7 @@ async def test_no_results(broker: FederationBroker, mock_vector_store: MagicMock
     """Test when no sources are found."""
     mock_vector_store.search.return_value = []
 
-    response = await broker.dispatch_query("weird query", {})
+    response = await broker.dispatch_query("weird query", UserContext(user_id="u1", email="test@example.com"))
 
     assert len(response.aggregated_results) == 0
 
@@ -233,7 +238,7 @@ async def test_embedding_failure(broker: FederationBroker, mock_embedding_servic
     """Test handling of embedding service failure."""
     mock_embedding_service.embed_text.side_effect = Exception("Model down")
 
-    response = await broker.dispatch_query("query", {})
+    response = await broker.dispatch_query("query", UserContext(user_id="u1", email="test@example.com"))
 
     assert len(response.aggregated_results) == 0
     assert "Embedding Failed" in response.provenance_signature
@@ -249,7 +254,7 @@ async def test_vector_search_failure(
     mock_embedding_service.embed_text.return_value = [0.1] * 384
     mock_vector_store.search.side_effect = Exception("DB Down")
 
-    response = await broker.dispatch_query("query", {})
+    response = await broker.dispatch_query("query", UserContext(user_id="u1", email="test@example.com"))
 
     assert len(response.aggregated_results) == 0
     assert "Search Failed" in response.provenance_signature
@@ -267,9 +272,10 @@ async def test_policy_engine_failure(
     If policy engine raises an exception, the source should be skipped (Fail Closed).
     """
     mock_vector_store.search.return_value = [sample_manifest_us]
+    mock_policy_engine.check_access.return_value = True
     mock_policy_engine.evaluate_policy.side_effect = Exception("OPA Down")
 
-    response = await broker.dispatch_query("query", {})
+    response = await broker.dispatch_query("query", UserContext(user_id="u1", email="test@example.com"))
 
     assert len(response.aggregated_results) == 0
 
@@ -288,7 +294,7 @@ async def test_empty_intent(
     mock_embedding_service.embed_text.return_value = [0.0] * 384
     mock_vector_store.search.return_value = []
 
-    response = await broker.dispatch_query("", {})
+    response = await broker.dispatch_query("", UserContext(user_id="u1", email="test@example.com"))
 
     assert isinstance(response, CatalogResponse)
     assert len(response.aggregated_results) == 0
@@ -330,6 +336,8 @@ async def test_complex_federation_scenario(
     mock_vector_store.search.return_value = candidates
 
     # 2. Policy: Block EU (index 1), Allow others
+    mock_policy_engine.check_access.return_value = True
+
     def policy_side_effect(policy: str, input_data: dict[str, Any]) -> bool:
         obj = input_data.get("object", {})
         if obj.get("urn") == sample_manifest_eu.urn:
@@ -353,7 +361,7 @@ async def test_complex_federation_scenario(
     mock_dispatcher.dispatch.side_effect = dispatch_side_effect
 
     # Act
-    response = await broker.dispatch_query("complex query", {})
+    response = await broker.dispatch_query("complex query", UserContext(user_id="u1", email="test@example.com"))
 
     # Assert
     # Total candidates: 5

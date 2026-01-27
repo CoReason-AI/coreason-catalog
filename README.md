@@ -6,6 +6,10 @@
 
 **Core Philosophy:** "The Map controls the Territory. Route by Meaning, Filter by Policy."
 
+**Key Features:**
+*   **Zero-Copy Storage:** The Catalog stores only metadata pointers (`source_pointer`) to external data, never raw content.
+*   **Delegated Identity:** strict access control using `UserContext` passports and `coreason-identity` shared kernel.
+
 ## Documentation
 
 Full documentation is available in the `docs/` folder:
