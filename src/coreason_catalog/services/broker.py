@@ -98,6 +98,15 @@ class FederationBroker:
         # 2. Governance (Policy Filtering)
         allowed_sources: List[SourceManifest] = []
         for source in candidates:
+            # Check ACLs
+            user_groups = user_context.get("groups", [])
+            if not isinstance(user_groups, list):
+                user_groups = []
+
+            if not self.policy_engine.check_acls(source.acls, user_groups):
+                logger.info(f"Source {source.urn} blocked by ACLs.")
+                continue
+
             # Construct Input Context for OPA
             # Subject: user_context
             # Object: source attributes
