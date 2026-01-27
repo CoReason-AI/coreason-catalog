@@ -3,6 +3,7 @@ import uuid
 from typing import List
 
 import pytest
+
 from coreason_catalog.models import SourceResult
 from coreason_catalog.services.provenance import ProvenanceService
 

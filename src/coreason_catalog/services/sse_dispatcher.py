@@ -2,6 +2,7 @@ import json
 from typing import Any, List, Optional
 
 import httpx
+
 from coreason_catalog.models import SourceManifest
 from coreason_catalog.services.broker import QueryDispatcher
 from coreason_catalog.utils.logger import logger
