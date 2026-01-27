@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
+
 from coreason_catalog.models import DataSensitivity, SourceManifest
 from coreason_catalog.services.sse_dispatcher import SSEQueryDispatcher
 
