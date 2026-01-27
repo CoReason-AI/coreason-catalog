@@ -1,6 +1,6 @@
-import json
 from typing import Optional
 
+from coreason_identity.models import UserContext
 from fastapi import APIRouter, Depends, Header, HTTPException
 from starlette import status
 
@@ -58,13 +58,10 @@ async def query_catalog(
     user_context = request.user_context
     if x_user_context:
         try:
-            parsed_context = json.loads(x_user_context)
-            if isinstance(parsed_context, dict):
-                user_context = parsed_context
-            else:
-                logger.warning("X-User-Context header is not a valid JSON object. Fallback to body.")
-        except json.JSONDecodeError:
-            logger.warning("Failed to parse X-User-Context header. Fallback to body.")
+            # Validate and convert header JSON to UserContext model
+            user_context = UserContext.model_validate_json(x_user_context)
+        except Exception as e:
+            logger.warning(f"Failed to parse X-User-Context header: {e}. Fallback to body.")
 
     try:
         response = await broker.dispatch_query(request.intent, user_context, request.limit)

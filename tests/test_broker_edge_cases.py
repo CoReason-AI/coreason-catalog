@@ -2,6 +2,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from coreason_identity.models import UserContext
 
 from coreason_catalog.models import (
     DataSensitivity,
@@ -90,11 +91,12 @@ async def test_all_sources_fail(
     s2 = base_manifest.model_copy(update={"urn": "urn:2"})
     mock_vector_store.search.return_value = [s1, s2]
     mock_policy_engine.evaluate_policy.return_value = True
+    mock_policy_engine.check_access.return_value = True
 
     # Dispatcher always raises exception
     mock_dispatcher.dispatch.side_effect = Exception("Down")
 
-    response = await broker.dispatch_query("query", {})
+    response = await broker.dispatch_query("query", UserContext(user_id="u1", email="test@example.com"))
 
     assert len(response.aggregated_results) == 2
     assert all(r.status == "ERROR" for r in response.aggregated_results)
@@ -119,13 +121,15 @@ async def test_mixed_blocked_and_success(
     mock_vector_store.search.return_value = [s_allowed, s_blocked]
 
     # Policy Logic
+    mock_policy_engine.check_access.return_value = True
+
     def policy_side_effect(policy: str, input_data: dict[str, Any]) -> bool:
         return bool(input_data["object"]["urn"] == "urn:allowed")
 
     mock_policy_engine.evaluate_policy.side_effect = policy_side_effect
     mock_dispatcher.dispatch.return_value = "data"
 
-    response = await broker.dispatch_query("query", {})
+    response = await broker.dispatch_query("query", UserContext(user_id="u1", email="test@example.com"))
 
     assert len(response.aggregated_results) == 1
     assert response.aggregated_results[0].source_urn == "urn:allowed"
@@ -151,10 +155,11 @@ async def test_mixed_blocked_and_error(
     def policy_side_effect(policy: str, input_data: dict[str, Any]) -> bool:
         return bool(input_data["object"]["urn"] == "urn:allowed_fail")
 
+    mock_policy_engine.check_access.return_value = True
     mock_policy_engine.evaluate_policy.side_effect = policy_side_effect
     mock_dispatcher.dispatch.side_effect = Exception("Fail")
 
-    response = await broker.dispatch_query("query", {})
+    response = await broker.dispatch_query("query", UserContext(user_id="u1", email="test@example.com"))
 
     assert len(response.aggregated_results) == 1
     assert response.aggregated_results[0].status == "ERROR"
@@ -177,6 +182,7 @@ async def test_large_scale_partial_failure(
     candidates = [base_manifest.model_copy(update={"urn": f"urn:{i}"}) for i in range(count)]
     mock_vector_store.search.return_value = candidates
     mock_policy_engine.evaluate_policy.return_value = True
+    mock_policy_engine.check_access.return_value = True
 
     # Dispatcher: Fail for urn:0, Success for others
     async def dispatch_side_effect(source: SourceManifest, intent: str) -> Any:
@@ -186,7 +192,7 @@ async def test_large_scale_partial_failure(
 
     mock_dispatcher.dispatch.side_effect = dispatch_side_effect
 
-    response = await broker.dispatch_query("query", {})
+    response = await broker.dispatch_query("query", UserContext(user_id="u1", email="test@example.com"))
 
     assert len(response.aggregated_results) == 20
 
