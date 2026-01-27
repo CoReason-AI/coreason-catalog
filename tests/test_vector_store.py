@@ -2,6 +2,7 @@ from pathlib import Path
 from typing import Generator
 
 import pytest
+
 from coreason_catalog.models import DataSensitivity, SourceManifest
 from coreason_catalog.services.vector_store import VectorStore
 

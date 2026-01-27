@@ -12,6 +12,9 @@ import concurrent.futures
 from unittest.mock import MagicMock, patch
 
 import pytest
+from fastapi import Depends, FastAPI
+from fastapi.testclient import TestClient
+
 from coreason_catalog.dependencies import (
     get_embedding_service,
     get_federation_broker,
@@ -21,8 +24,6 @@ from coreason_catalog.dependencies import (
 from coreason_catalog.services.broker import FederationBroker
 from coreason_catalog.services.registry import RegistryService
 from coreason_catalog.services.vector_store import VectorStore
-from fastapi import Depends, FastAPI
-from fastapi.testclient import TestClient
 
 
 def test_singleton_concurrency() -> None:
