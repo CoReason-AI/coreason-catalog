@@ -4,6 +4,8 @@ import uuid
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List
 
+from coreason_identity.models import UserContext
+
 from coreason_catalog.models import CatalogResponse, SourceManifest, SourceResult
 from coreason_catalog.services.embedding import EmbeddingService
 from coreason_catalog.services.policy_engine import PolicyEngine
@@ -52,7 +54,7 @@ class FederationBroker:
         self.dispatcher = dispatcher
         self.provenance_service = provenance_service
 
-    async def dispatch_query(self, intent: str, user_context: Dict[str, Any], limit: int = 10) -> CatalogResponse:
+    async def dispatch_query(self, intent: str, user_context: UserContext, limit: int = 10) -> CatalogResponse:
         """
         Execute the Register-Discover-Govern-Stamp Loop.
 
@@ -70,7 +72,7 @@ class FederationBroker:
             A CatalogResponse containing aggregated results.
         """
         query_id = uuid.uuid4()
-        logger.info(f"Processing query {query_id}: '{intent}'", user=user_context.get("user_id"))
+        logger.info(f"Processing query {query_id}: '{intent}'", user=user_context.user_id)
 
         # 1. Semantic Discovery
         # Embed the intent
@@ -99,11 +101,7 @@ class FederationBroker:
         allowed_sources: List[SourceManifest] = []
         for source in candidates:
             # Check ACLs
-            user_groups = user_context.get("groups", [])
-            if not isinstance(user_groups, list):
-                user_groups = []
-
-            if not self.policy_engine.check_acls(source.acls, user_groups):
+            if not self.policy_engine.check_access(source, user_context):
                 logger.info(f"Source {source.urn} blocked by ACLs.")
                 continue
 
@@ -112,7 +110,7 @@ class FederationBroker:
             # Object: source attributes
             # Action: "QUERY"
             input_data = {
-                "subject": user_context,
+                "subject": user_context.model_dump(),
                 "object": {
                     "urn": source.urn,
                     "geo": source.geo_location,

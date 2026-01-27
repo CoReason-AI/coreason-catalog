@@ -26,6 +26,7 @@ This component is responsible for knowing *what* data exists across the mesh and
     *   **Registration:** Stores a `SourceManifest` for each MCP Server.
     *   **Indexing:** Embeds natural language descriptions and schema fields for semantic retrieval.
     *   **Search:** Performs vector search to find sources matching an agent's intent (e.g., "Find Toxicity Data").
+    *   **Zero-Copy:** Stores `source_pointer` to external data (e.g. drive ID, item ID) instead of raw content.
 
 ## 2. The Sovereignty Guard (The Firewall)
 
@@ -34,6 +35,7 @@ This component enforces data sovereignty and access control *before* any data is
 *   **Role:** Attribute-Based Access Control (ABAC) engine.
 *   **Technology:** **Open Policy Agent (OPA)**.
 *   **Functionality:**
+    *   **Delegated Identity:** Enforces strict `UserContext` propagation and validation.
     *   **Context Evaluation:** Takes the User Context (Subject), Source Metadata (Object), and Query (Action).
     *   **Policy Execution:** Runs Rego policies (e.g., `allow { input.subject.location == input.object.geo }`).
     *   **Filtering:** Silently filters out sources that the user is not authorized to access. This ensures "Security by Obscurity"—agents are not even aware of restricted sources.

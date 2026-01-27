@@ -5,6 +5,9 @@ import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from coreason_identity.models import UserContext
+
+from coreason_catalog.models import SourceManifest
 from coreason_catalog.utils.logger import logger
 
 
@@ -140,20 +143,21 @@ class PolicyEngine:
             if "input_path" in locals():
                 Path(input_path).unlink(missing_ok=True)
 
-    def check_acls(self, required_acls: List[str], user_groups: List[str]) -> bool:
+    def check_access(self, asset: SourceManifest, user_context: UserContext) -> bool:
         """
-        Check if the user has any of the required ACLs.
+        Check if the user has access to the asset using strict Delegated Identity enforcement.
 
         Args:
-            required_acls: List of required security groups (e.g. ["group:A", "group:B"]).
-                           If empty, access is allowed (or governed by other policies).
-            user_groups: List of groups the user belongs to.
+            asset: The source manifest/asset to check access for.
+            user_context: The user context containing identity and groups.
 
         Returns:
             True if access is allowed, False otherwise.
         """
-        if not required_acls:
+        # Service accounts bypass ACL checks
+        # Note: UserContext model currently stores this in claims
+        if user_context.claims.get("is_service_account") is True:
             return True
 
-        # Check intersection
-        return not set(required_acls).isdisjoint(user_groups)
+        # Strict check: User must share at least one group with the asset's ACLs.
+        return bool(set(asset.acls) & set(user_context.groups))
